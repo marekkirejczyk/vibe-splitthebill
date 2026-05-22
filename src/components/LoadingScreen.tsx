@@ -1,6 +1,8 @@
 "use client";
 
-export function LoadingScreen() {
+type Props = { onCancel?: () => void };
+
+export function LoadingScreen({ onCancel }: Props) {
   return (
     <main className="flex flex-col min-h-dvh items-center justify-center px-7 relative overflow-hidden">
       <div
@@ -34,6 +36,16 @@ export function LoadingScreen() {
 
       <h2 className="mt-6 text-2xl font-bold text-text">Reading your receipt…</h2>
       <p className="mt-1 text-sm text-muted">Claude is identifying items and prices.</p>
+
+      {onCancel && (
+        <button
+          type="button"
+          onClick={onCancel}
+          className="mt-10 text-sm font-semibold text-muted underline-offset-2 underline"
+        >
+          Cancel
+        </button>
+      )}
     </main>
   );
 }
