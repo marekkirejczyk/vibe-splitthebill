@@ -11,6 +11,7 @@ type Props = {
   onSwipe: (id: string, direction: "left" | "right") => void;
   onEditName: (id: string, name: string) => void;
   onEditPrice: (id: string, price: number) => void;
+  onSetTaxIncluded: (value: boolean) => void;
   onReset: () => void;
 };
 
@@ -19,6 +20,7 @@ export function BillReview({
   onSwipe,
   onEditName,
   onEditPrice,
+  onSetTaxIncluded,
   onReset,
 }: Props) {
   const unassigned = bill.items.filter((i) => i.assignee === null);
@@ -79,6 +81,27 @@ export function BillReview({
             New bill
           </button>
         </div>
+        {bill.extras.tax > 0 && (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={bill.taxIncluded}
+            onClick={() => onSetTaxIncluded(!bill.taxIncluded)}
+            className="mt-3 inline-flex items-center gap-2 text-[12px] font-semibold text-muted"
+          >
+            <span
+              aria-hidden
+              className={`flex h-4 w-4 items-center justify-center rounded border-2 ${
+                bill.taxIncluded
+                  ? "border-action bg-action text-white"
+                  : "border-border bg-card"
+              }`}
+            >
+              {bill.taxIncluded ? "✓" : ""}
+            </span>
+            Tax already in prices · {formatMoney(bill.extras.tax, bill.currency)}
+          </button>
+        )}
       </header>
 
       <LayoutGroup>

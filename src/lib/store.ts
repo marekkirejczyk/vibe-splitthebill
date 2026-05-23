@@ -4,6 +4,7 @@ import { useEffect, useReducer, useState } from "react";
 import type {
   Assignee,
   Bill,
+  ExtractCategory,
   ExtractedLine,
   ExtractedReceipt,
   Item,
@@ -18,6 +19,7 @@ export type Action =
   | { type: "SWIPE"; id: string; direction: "left" | "right" }
   | { type: "EDIT_NAME"; id: string; name: string }
   | { type: "EDIT_PRICE"; id: string; price: number }
+  | { type: "SET_TAX_INCLUDED"; value: boolean }
   | { type: "RESET" };
 
 // Per spec:
@@ -77,7 +79,43 @@ export function billFromReceipt(r: ExtractedReceipt): Bill {
     else if (line.category === "tip") extras.tip += line.price;
     else if (line.category === "service") extras.service += line.price;
   }
-  return { currency: r.currency || "$", items, extras };
+  return {
+    currency: r.currency || "$",
+    items,
+    extras,
+    taxIncluded: detectTaxIncluded(r),
+  };
+}
+
+// Decide whether the receipt's item prices already include the tax line.
+// Resolution order: textual signal from the model → math cross-check
+// against `printedTotal` → safe default (`false`, US-style exclusive).
+export function detectTaxIncluded(r: ExtractedReceipt): boolean {
+  const sumOf = (cat: ExtractCategory) =>
+    r.lines.filter((l) => l.category === cat).reduce((a, l) => a + l.price, 0);
+
+  const tax = sumOf("tax");
+  if (tax === 0) return false;
+
+  if (r.taxBehavior === "inclusive") return true;
+  if (r.taxBehavior === "exclusive") return false;
+
+  if (typeof r.printedTotal === "number" && Number.isFinite(r.printedTotal)) {
+    const items = r.lines
+      .filter((l) => l.category === "item" || l.category === "discount")
+      .reduce((a, l) => a + l.price, 0);
+    const tip = sumOf("tip");
+    const service = sumOf("service");
+    const inclusive = items + tip + service;
+    const exclusive = items + tax + tip + service;
+    const tol = Math.max(0.05, 0.01 * Math.abs(r.printedTotal));
+    const dInc = Math.abs(inclusive - r.printedTotal);
+    const dExc = Math.abs(exclusive - r.printedTotal);
+    if (dInc <= tol && dInc < dExc) return true;
+    if (dExc <= tol && dExc < dInc) return false;
+  }
+
+  return false;
 }
 
 function cryptoId() {
@@ -92,7 +130,13 @@ function reducer(state: State, action: Action): State {
     case "LOAD_RECEIPT":
       return { bill: billFromReceipt(action.receipt) };
     case "REHYDRATE":
-      return { bill: action.bill };
+      // Bills persisted before the taxIncluded field was introduced won't
+      // have it — default to false (the previous behaviour).
+      return {
+        bill: action.bill
+          ? { ...action.bill, taxIncluded: action.bill.taxIncluded ?? false }
+          : null,
+      };
     case "RESET":
       return { bill: null };
     case "SWIPE": {
@@ -129,6 +173,10 @@ function reducer(state: State, action: Action): State {
           ),
         },
       };
+    }
+    case "SET_TAX_INCLUDED": {
+      if (!state.bill) return state;
+      return { bill: { ...state.bill, taxIncluded: action.value } };
     }
   }
 }

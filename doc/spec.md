@@ -69,6 +69,23 @@ How the per-unit price is decided:
 
 The expansion happens in `billFromReceipt` (`src/lib/store.ts`). The Anthropic model only reports what's printed; the app handles the multiplication / division and ID assignment.
 
+### 1.6 Tax-inclusive receipts
+
+Receipts in India, the EU, the UK, Australia, and many other places print prices that *already include* tax (VAT/GST/MRP). The tax line at the bottom is informational — adding it to per-person totals would double-count. US-style receipts work the opposite way: tax is printed and added on top.
+
+The app picks the right rule automatically:
+- **Textual signal first.** Claude reports `taxBehavior: "inclusive" | "exclusive" | "unknown"` from explicit cues on the receipt ("incl. GST", "MRP", "Sales tax", …).
+- **Math cross-check.** When the text is unknown, the app compares `printedTotal` against both `Σ items + tax + tip + service` (exclusive) and `Σ items + tip + service` (inclusive); the closer of the two wins, within a 1% / 5¢ tolerance.
+- **Safe default.** If both checks are inconclusive — *or* there is no tax line at all — the app treats tax as exclusive (the previous behaviour).
+
+Whenever an extracted bill has a non-zero tax line, the bill review header shows a small toggle:
+
+> ☐ Tax already in prices · ₹91.50
+
+The checkbox state is the auto-detection result; tapping it flips the rule for the current bill. The choice is persisted in `localStorage` along with the rest of the bill. When **on**, `extras.tax` is reported in the UI but excluded from the per-person totals; **tip** and **service** stay additive in both modes.
+
+Implementation: `detectTaxIncluded` in `src/lib/store.ts` resolves the flag at load time; `computeTotals` in `src/lib/splitter.ts` reads `bill.taxIncluded` to decide whether to add tax. Covered by `src/lib/store.test.ts` (`describe("detectTaxIncluded")`) and `src/lib/splitter.test.ts` (`describe("taxIncluded flag")`).
+
 ---
 
 ## 2. Technical architecture
@@ -95,6 +112,7 @@ Implementation: `src/lib/store.ts → nextAssignee`. Exhaustively covered by `sr
 subYou     = Σ items where assignee == "you"
 subThem    = Σ items where assignee == "them"
 subU       = Σ items where assignee == null
+tax        = bill.taxIncluded ? 0 : bill.extras.tax    # see §1.6
 extras     = tax + tip + service
 itemsTotal = subYou + subThem + subU
 
@@ -131,16 +149,18 @@ ImageInput ──onPick(File)──▶ Home
                               │                model:  claude-sonnet-4-6
                               │                tool:   record_receipt  (forced via tool_choice)
                               │
-                              ◀─── ExtractedReceipt { currency, lines[ name, price, category, quantity?, unitPrice? ] }
+                              ◀─── ExtractedReceipt { currency, lines[ name, price, category, quantity?, unitPrice? ],
+                                                       printedSubtotal?, printedTotal?, taxBehavior? }
                               │
                               └─▶ dispatch LOAD_RECEIPT
                                     └─▶ billFromReceipt(receipt)
-                                          └─▶ for each line:
-                                                toMultiItem(line) → expandItemLine(mi) → 1..N Items
-                                                                                          (per-unit price honored
-                                                                                           when receipt prints it;
-                                                                                           otherwise divide & distribute pennies)
-                                          → Bill { items[], extras }
+                                          ├─▶ for each line:
+                                          │     toMultiItem(line) → expandItemLine(mi) → 1..N Items
+                                          │                                               (per-unit price honored
+                                          │                                                when receipt prints it;
+                                          │                                                otherwise divide & distribute pennies)
+                                          └─▶ detectTaxIncluded(receipt) → bill.taxIncluded   (see §1.6)
+                                          → Bill { items[], extras, taxIncluded }
                                                               │
                                                               ├──▶ BillReview UI (with SwipeableRow per item)
                                                               └──▶ localStorage("splitbill.v1") sync
@@ -157,7 +177,10 @@ The server-side prompt forces a single tool call:
     "type": "object",
     "required": ["currency", "lines"],
     "properties": {
-      "currency": { "type": "string" },
+      "currency":        { "type": "string" },
+      "printedSubtotal": { "type": "number" }, // "Subtotal" line as printed, if visible
+      "printedTotal":    { "type": "number" }, // final "Total" / "Grand Total" / "Amount Payable" line
+      "taxBehavior":     { "enum": ["inclusive","exclusive","unknown"] }, // see §1.6
       "lines": {
         "type": "array",
         "items": {
@@ -182,6 +205,8 @@ Why force a tool: we want machine-parseable JSON regardless of how the model wan
 Why these categories: `item` and `discount` map to draggable `Item`s in the UI (after per-unit expansion). `tax | tip | service` accumulate into `bill.extras` and get prorated. `subtotal | total | other` are read (so the model has a category for what it sees) but discarded — they're redundant with the sum and would double-count if surfaced.
 
 Why two new optional fields instead of one: `quantity` alone wouldn't tell us how to derive the per-unit price. By splitting `quantity` and `unitPrice`, the model reports *exactly what's on the receipt* and the app picks the right strategy (honor printed-per-unit vs divide-and-distribute) without rounding drift from the model's arithmetic. See `§1.5` for the user-facing behavior, and `expandItemLine` in `src/lib/store.ts` for the implementation.
+
+Why the three tax-inclusivity fields: `taxBehavior` is the textual signal lifted straight off the receipt ("incl. GST" → `inclusive`, "Sales tax" → `exclusive`, else `unknown`). `printedSubtotal` and `printedTotal` let the app cross-check the math when the textual signal is missing. The app combines them in `detectTaxIncluded` (`src/lib/store.ts`); see `§1.6` for the user-facing behavior and resolution rules.
 
 Server: `src/lib/parseReceipt.ts`. Route: `src/app/api/extract/route.ts`. Both covered by `src/app/api/extract/route.test.ts` (mocked) and `src/lib/parseReceipt.test.ts` (live, opt-in).
 

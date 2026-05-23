@@ -126,6 +126,10 @@ describe("POST /api/extract", () => {
         },
         { name: "Sales tax", price: 2.04, category: "tax" as const },
       ],
+      // New tax-inclusivity hints the route must forward verbatim.
+      printedSubtotal: 47,
+      printedTotal: 78.58,
+      taxBehavior: "exclusive" as const,
     };
     extractReceiptMock.mockResolvedValueOnce(upstream);
     const form = new FormData();

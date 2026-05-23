@@ -11,7 +11,11 @@ export function computeTotals(bill: Bill): Totals {
   const subYou = sum(bill.items, "you");
   const subThem = sum(bill.items, "them");
   const subU = sum(bill.items, null);
-  const extras = bill.extras.tax + bill.extras.tip + bill.extras.service;
+  // When prices already include tax (e.g. Indian GST, EU VAT), the tax line
+  // is informational — don't add it to per-person totals. Tip and service
+  // are still additive regardless.
+  const tax = bill.taxIncluded ? 0 : bill.extras.tax;
+  const extras = tax + bill.extras.tip + bill.extras.service;
   const itemsTotal = subYou + subThem + subU;
 
   let shareYou: number, shareThem: number, shareU: number;

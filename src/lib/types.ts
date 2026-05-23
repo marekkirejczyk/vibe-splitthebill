@@ -24,6 +24,10 @@ export type Bill = {
   currency: string;
   items: Item[];
   extras: Extras;
+  // True when the extracted item prices already include tax (VAT/GST/MRP),
+  // so `extras.tax` is informational and must NOT be added to per-person
+  // totals. Set by `detectTaxIncluded` at load time; flippable by the user.
+  taxIncluded: boolean;
 };
 
 export type ExtractCategory =
@@ -47,4 +51,7 @@ export type ExtractedLine = {
 export type ExtractedReceipt = {
   currency: string;
   lines: ExtractedLine[];
+  printedSubtotal?: number;
+  printedTotal?: number;
+  taxBehavior?: "inclusive" | "exclusive" | "unknown";
 };

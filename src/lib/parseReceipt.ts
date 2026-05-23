@@ -10,6 +10,11 @@ Extract every visible line that has a price into structured records.
 - If a line shows a quantity multiplier (e.g. "2 × IPA", "Espresso x3", "3 @ $3.50"), set "quantity" to that count. "price" is ALWAYS the line total as printed.
   - If the per-unit price is ALSO printed on the receipt (e.g. "2 × $8.00   $16.00" or "Espresso  3 @ $3.50   $10.50"), set "unitPrice" to that printed per-unit value.
   - If only the line total is printed (e.g. "IPA pint x2   $16.00"), leave "unitPrice" out — the app will divide.
+- Whenever the receipt prints a "Subtotal" line, fill "printedSubtotal" with it. Whenever it prints a final "Total" / "Grand Total" / "Amount Payable" / "Balance Due" line, fill "printedTotal". These two numbers are used to cross-check the math.
+- Set "taxBehavior" to indicate whether item prices ALREADY include tax:
+  - "inclusive" when the receipt explicitly says prices include tax — cues like "incl. GST", "incl. VAT", "MRP", "Inclusive of taxes", "Prices include tax", "VAT included", "GST included", or when items are listed with their MRP (common in India). Most receipts from India, the EU, the UK, Australia, and Japan are inclusive.
+  - "exclusive" when tax is added on top — cues like "Sales tax", "+ Tax", "Tax (added)", or a US-style receipt that shows items, then "Subtotal", then "Tax", then "Total" with Total = Subtotal + Tax.
+  - "unknown" when there's no tax line at all, or you genuinely cannot tell.
 - If you can't read the receipt at all, return an empty lines array.`;
 
 const TOOL: Anthropic.Tool = {
@@ -22,6 +27,22 @@ const TOOL: Anthropic.Tool = {
       currency: {
         type: "string",
         description: "Currency symbol or ISO code, e.g. '$', '€', 'PLN'. Best guess.",
+      },
+      printedSubtotal: {
+        type: "number",
+        description:
+          "The 'Subtotal' line as printed on the receipt, if visible. Omit otherwise.",
+      },
+      printedTotal: {
+        type: "number",
+        description:
+          "The final 'Total' / 'Grand Total' / 'Amount Payable' line as printed, if visible. Omit otherwise.",
+      },
+      taxBehavior: {
+        type: "string",
+        enum: ["inclusive", "exclusive", "unknown"],
+        description:
+          "Whether item prices already include tax. 'inclusive' when the receipt says so (incl. GST/VAT, MRP, etc.). 'exclusive' when tax is added on top (US-style). 'unknown' otherwise.",
       },
       lines: {
         type: "array",

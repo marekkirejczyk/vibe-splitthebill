@@ -2,7 +2,11 @@ import { describe, expect, test } from "vitest";
 import { computeTotals, formatMoney } from "./splitter";
 import type { Bill, Item } from "./types";
 
-function bill(items: Partial<Item>[], extras = { tax: 0, tip: 0, service: 0 }): Bill {
+function bill(
+  items: Partial<Item>[],
+  extras = { tax: 0, tip: 0, service: 0 },
+  taxIncluded = false
+): Bill {
   return {
     currency: "$",
     items: items.map((it, i) => ({
@@ -12,6 +16,7 @@ function bill(items: Partial<Item>[], extras = { tax: 0, tip: 0, service: 0 }): 
       assignee: it.assignee ?? null,
     })),
     extras,
+    taxIncluded,
   };
 }
 
@@ -114,6 +119,50 @@ describe("computeTotals", () => {
       ])
     );
     expect(t.you).toBe(0.3);
+  });
+
+  describe("taxIncluded flag", () => {
+    test("tax is skipped from per-person totals but tip + service still prorate", () => {
+      // Indian-style: items already include GST (₹91.50). Tip ₹50 stays additive.
+      const t = computeTotals(
+        bill(
+          [
+            { price: 235, assignee: "them" },
+            { price: 1595, assignee: "you" },
+          ],
+          { tax: 91.5, tip: 50, service: 0 },
+          true
+        )
+      );
+      // Tax does not flow into anybody.
+      // You: 1595 + tip * (1595 / 1830); Them: 235 + tip * (235 / 1830).
+      expect(t.them).toBeCloseTo(235 + 50 * (235 / 1830), 2);
+      expect(t.you).toBeCloseTo(1595 + 50 * (1595 / 1830), 2);
+      // (-0 vs 0 from floating-point residue; toBeCloseTo treats them as equal)
+      expect(t.unassigned).toBeCloseTo(0, 2);
+      // Reported extras reflect what's actually added (tip only).
+      expect(t.extras).toBe(50);
+      // Money conserved against items + non-inclusive extras.
+      expect(t.you + t.them + t.unassigned).toBeCloseTo(235 + 1595 + 50, 2);
+    });
+
+    test("partial assignment with taxIncluded: tax stays out, unassigned absorbs no tax", () => {
+      // Same shape as the previous regression test, but tax is inclusive now.
+      const t = computeTotals(
+        bill(
+          [
+            { price: 235, assignee: "them" },
+            { price: 1595, assignee: null },
+          ],
+          { tax: 91.5, tip: 0, service: 0 },
+          true
+        )
+      );
+      expect(t.them).toBe(235);
+      expect(t.unassigned).toBe(1595);
+      expect(t.you).toBe(0);
+      expect(t.extras).toBe(0);
+    });
   });
 
   test("you + them + unassigned always equals subtotal + extras (money is conserved)", () => {
