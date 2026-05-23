@@ -264,7 +264,54 @@ Tokens are declared as CSS custom properties in `src/app/globals.css` and surfac
 
 ---
 
-## 3. Privacy and security notes
+## 3. Mobile (iOS + Android)
+
+### 3.1 Monorepo layout
+
+The repo is a pnpm workspace with three packages:
+
+```
+apps/web/         ← the Next.js app described above (relocated unchanged)
+apps/mobile/      ← Expo SDK 56 app, expo-router, jsx="react-native"
+packages/core/    ← @splitbill/core — pure domain logic shared by both
+```
+
+`packages/core` exports the type model, the totals math (`computeTotals`, `formatMoney`), the reducer + the helpers around it (`reducer`, `nextAssignee`, `toMultiItem`, `expandItemLine`, `billFromReceipt`, `detectInclusive`), the `StorageAdapter` interface + `STORAGE_KEY`, `computeResizeTarget`, and the `theme` design-token object. None of these touch the DOM, React, or platform APIs.
+
+### 3.2 Shared-core boundary
+
+Two rules hold the boundary:
+
+- `packages/core/tsconfig.json` omits `"dom"` from `lib`, so accidentally referencing `window`, `document`, or `localStorage` from core is a type error.
+- `parseReceipt` (which imports `@anthropic-ai/sdk`) is reachable only from the server-only path `@splitbill/core/server`. Mobile never imports it — when it needs to extract a receipt, it `POST`s the photo to the web app's `/api/extract` route, which keeps the Anthropic key server-side.
+
+The web app composes the core reducer with a `localStorage`-backed adapter in `apps/web/src/lib/useBillStore.ts`. The mobile app does the same with `AsyncStorage` (introduced in M3+).
+
+### 3.3 Theme tokens
+
+`packages/core/src/theme.ts` is the single source of truth for color, spacing, radius, type, gradient, and shadow values. The web app continues to read colors via Tailwind tokens (`apps/web/src/app/globals.css` mirrors the same hex values); mobile imports `theme` directly into `StyleSheet.create`.
+
+The Figma file's Variables collection is a 1:1 mirror of `theme.ts`. When tokens change, both files must move together — code first, then re-run the Figma mirror script.
+
+### 3.4 Figma source of truth
+
+Mobile UI is designed in Figma before any RN screen code lands:
+
+- **File:** `Split the Bill — Mobile` — https://www.figma.com/design/yDOs60DEcPKCIvBEbMPtRD
+- **Variables collection:** `theme` (color/, spacing/, radius/, type/) — mirrors `packages/core/src/theme.ts`.
+- **Frame stubs (M2):** five iPhone-15-sized (393×852) frames — `Start`, `Loading`, `Error`, `Bill Review`, `Inline Edit` — waiting to be designed in M3.
+
+### 3.5 Mobile-specific concerns (deferred to M3+)
+
+- **Photo capture:** `expo-image-picker` + `expo-image-manipulator` (web uses `<input capture>` + a `<canvas>` wrapper).
+- **Gestures:** `react-native-gesture-handler` + `react-native-reanimated` with the existing 70 px threshold + medium haptic on commit.
+- **Persistence:** `@react-native-async-storage/async-storage` behind the same `StorageAdapter` interface as web.
+- **Backend auth:** `/api/extract` is unauthenticated today. A shared-secret header lands before mobile ships externally (M4).
+- **API base URL:** mobile reads `extra.apiBaseUrl` from `apps/mobile/app.config.ts` (defaults to the production Vercel URL; overridable via `EXPO_PUBLIC_API_BASE_URL`).
+
+---
+
+## 4. Privacy and security notes
 
 - The Anthropic key lives **only** in `ANTHROPIC_API_KEY` on the server. The route handler reads it via `process.env`; it never reaches the client bundle (no `NEXT_PUBLIC_` prefix).
 - Uploaded photos hit `/api/extract`, get base64'd, sent to Anthropic, then go out of scope at the end of the request. There is no persistence on the server side.
