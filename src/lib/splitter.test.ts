@@ -51,7 +51,7 @@ describe("computeTotals", () => {
     expect(t.them).toBe(15);
   });
 
-  test("if only one side has items, that side absorbs all extras", () => {
+  test("if only one side has items AND nothing else is unassigned, that side absorbs all extras", () => {
     const t = computeTotals(
       bill(
         [{ price: 10, assignee: "you" }],
@@ -60,9 +60,32 @@ describe("computeTotals", () => {
     );
     expect(t.you).toBe(15);
     expect(t.them).toBe(0);
+    expect(t.unassigned).toBe(0);
   });
 
-  test("with unassigned items present, extras are NOT prorated yet (held until items assigned)", () => {
+  test("partial assignment: extras prorate over (you + them + unassigned), NOT just assigned (regression: GH bug report)", () => {
+    // Real-world bug: one ₹235 item assigned to Them, ₹1595 still unassigned,
+    // ₹91.50 extras. Old logic gave Them ALL ₹91.50 (because denominator
+    // was just `assigned`). New logic spreads extras across the full bill.
+    const t = computeTotals(
+      bill(
+        [
+          { price: 235, assignee: "them" },
+          { price: 1595, assignee: null },
+        ],
+        { tax: 91.5, tip: 0, service: 0 }
+      )
+    );
+    // Them only gets their proportional share of extras (235/1830 of 91.50)
+    expect(t.them).toBeCloseTo(235 + 91.5 * (235 / 1830), 2);
+    expect(t.you).toBe(0);
+    // Unassigned bucket carries the remainder of the extras
+    expect(t.unassigned).toBeCloseTo(1595 + 91.5 * (1595 / 1830), 2);
+    // Total money is conserved
+    expect(t.you + t.them + t.unassigned).toBeCloseTo(235 + 1595 + 91.5, 2);
+  });
+
+  test("with everything unassigned, extras flow entirely into the unassigned bucket", () => {
     const t = computeTotals(
       bill(
         [{ price: 30, assignee: null }],
@@ -71,7 +94,7 @@ describe("computeTotals", () => {
     );
     expect(t.you).toBe(0);
     expect(t.them).toBe(0);
-    expect(t.unassigned).toBe(30);
+    expect(t.unassigned).toBe(34); // 30 of food + all 4 of tax
     expect(t.extras).toBe(4);
   });
 
@@ -79,6 +102,7 @@ describe("computeTotals", () => {
     const t = computeTotals(bill([], { tax: 4, tip: 0, service: 0 }));
     expect(t.you).toBe(2);
     expect(t.them).toBe(2);
+    expect(t.unassigned).toBe(0);
   });
 
   test("rounds to cents (no floating-point drift)", () => {
@@ -92,17 +116,21 @@ describe("computeTotals", () => {
     expect(t.you).toBe(0.3);
   });
 
-  test("you + them always equals subtotal + extras", () => {
+  test("you + them + unassigned always equals subtotal + extras (money is conserved)", () => {
     const t = computeTotals(
       bill(
         [
           { price: 17.33, assignee: "you" },
           { price: 12.67, assignee: "them" },
+          { price: 9.99, assignee: null },
         ],
         { tax: 3.21, tip: 5.79, service: 1.0 }
       )
     );
-    expect(t.you + t.them).toBeCloseTo(17.33 + 12.67 + 3.21 + 5.79 + 1.0, 2);
+    expect(t.you + t.them + t.unassigned).toBeCloseTo(
+      17.33 + 12.67 + 9.99 + 3.21 + 5.79 + 1.0,
+      2
+    );
   });
 });
 

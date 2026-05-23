@@ -12,15 +12,27 @@ export function computeTotals(bill: Bill): Totals {
   const subThem = sum(bill.items, "them");
   const subU = sum(bill.items, null);
   const extras = bill.extras.tax + bill.extras.tip + bill.extras.service;
-  const assigned = subYou + subThem;
-  const shareYou =
-    assigned > 0 ? extras * (subYou / assigned) : subU > 0 ? 0 : extras / 2;
-  const shareThem =
-    assigned > 0 ? extras - shareYou : subU > 0 ? 0 : extras / 2;
+  const itemsTotal = subYou + subThem + subU;
+
+  let shareYou: number, shareThem: number, shareU: number;
+  if (itemsTotal > 0) {
+    // Prorate extras over the FULL items pool, not just the assigned portion.
+    // Otherwise the first person to be assigned anything absorbs the entire
+    // extras pool until the other person also has items.
+    shareYou = extras * (subYou / itemsTotal);
+    shareThem = extras * (subThem / itemsTotal);
+    shareU = extras - shareYou - shareThem;
+  } else {
+    // No items at all — split extras 50/50 to avoid divide-by-zero.
+    shareYou = extras / 2;
+    shareThem = extras - shareYou;
+    shareU = 0;
+  }
+
   return {
     you: round(subYou + shareYou),
     them: round(subThem + shareThem),
-    unassigned: round(subU),
+    unassigned: round(subU + shareU),
     extras: round(extras),
   };
 }

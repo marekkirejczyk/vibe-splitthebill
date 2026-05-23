@@ -92,26 +92,28 @@ Implementation: `src/lib/store.ts → nextAssignee`. Exhaustively covered by `sr
 `computeTotals(bill) → { you, them, unassigned, extras }`, all in dollars rounded to cents.
 
 ```
-subYou   = Σ items where assignee == "you"
-subThem  = Σ items where assignee == "them"
-subU     = Σ items where assignee == null
-extras   = tax + tip + service
-assigned = subYou + subThem
+subYou     = Σ items where assignee == "you"
+subThem    = Σ items where assignee == "them"
+subU       = Σ items where assignee == null
+extras     = tax + tip + service
+itemsTotal = subYou + subThem + subU
 
-if assigned > 0:
-    shareYou  = extras * (subYou / assigned)
-    shareThem = extras * (subThem / assigned)
-elif subU > 0:                              # items exist but none assigned
-    shareYou  = 0                           # hold extras back, don't allocate
-    shareThem = 0
-else:                                       # empty bill with extras
-    shareYou  = shareThem = extras / 2
+if itemsTotal > 0:
+    shareYou  = extras * (subYou  / itemsTotal)
+    shareThem = extras * (subThem / itemsTotal)
+    shareU    = extras - shareYou - shareThem      # remainder lands on unassigned
+else:                                              # empty bill with extras
+    shareYou = shareThem = extras / 2
+    shareU = 0
 
-you  = round(subYou  + shareYou,  2)
-them = round(subThem + shareThem, 2)
+you        = round(subYou  + shareYou,  2)
+them       = round(subThem + shareThem, 2)
+unassigned = round(subU    + shareU,    2)
 ```
 
-The "hold extras back when nothing is assigned" rule is intentional: showing each person `$X` while every item is still in Unassigned would be misleading. Once anything is assigned, extras snap into proportion.
+**Why prorate over the full items pool (not just assigned).** Earlier versions divided extras over `subYou + subThem`, meaning the very first item you assigned absorbed the entire tax/tip pool until the other person also had items. On a half-assigned bill that made the per-person totals look wildly inflated. The current rule spreads extras proportionally across every item — assigned or not — so unassigned items "carry" their share of extras in the Unassigned bucket. As items move out of Unassigned, their share of extras follows them. When everything is assigned, `subU = 0` and the formula reduces to a pure proportional split between You and Them.
+
+**Money is conserved.** `you + them + unassigned == subYou + subThem + subU + extras` (to the cent). This means the warning pill in the footer (`"₹X still unassigned"`) accounts for both unassigned food and the share of extras it currently carries — clearing the bill always drives that number to zero.
 
 Implementation: `src/lib/splitter.ts → computeTotals`. Edge cases pinned by `src/lib/splitter.test.ts`.
 
