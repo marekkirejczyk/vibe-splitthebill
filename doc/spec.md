@@ -2,7 +2,9 @@
 
 A two-person bill splitter. Snap a receipt with your phone, swipe each item left for "You" or right for "Them", and watch the per-person totals settle. Tax, tip, and service charges are prorated automatically against each person's subtotal.
 
-**Design source of truth:** [Figma file](https://www.figma.com/design/YUyO4XQnCwPRtk1K6Asdr1)
+**Design source of truth:**
+- Web: [Figma file](https://www.figma.com/design/YUyO4XQnCwPRtk1K6Asdr1)
+- Mobile (React Native, in progress): [Figma file](https://www.figma.com/design/pRf4fWtfr9n3P4z8Eh6BzR) — 5 screens (Start / Loading / Error / Permission denied / Bill review) + 6 SwipeableRow & inline-edit interaction states. Variable collections (Color / Spacing / Radius) mirror `packages/core/src/theme.ts` 1:1.
 
 ---
 

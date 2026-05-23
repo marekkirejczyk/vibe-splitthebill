@@ -82,20 +82,18 @@ Boundary enforcement: `packages/core/tsconfig.json` omits `"dom"` from `lib`, an
 
 ## New mobile interface — Figma first
 
-The mobile UI is **designed in Figma before any RN code**, using the existing color tokens from `src/app/globals.css` lines 1–40 as the starting palette and the existing Figma file linked in `doc/spec.md` as inspiration only (web layout shouldn't be ported pixel-for-pixel).
+**Status: complete.** Initial mobile design lives at **[Split the Bill — Mobile](https://www.figma.com/design/pRf4fWtfr9n3P4z8Eh6BzR)** (Figma file `pRf4fWtfr9n3P4z8Eh6BzR`).
 
-**Figma flow** (uses the Figma MCP server):
-1. Load `/figma-generate-design` skill, then `use_figma` to create a "Split the Bill — Mobile" file with a Variables collection mapping 1:1 to `packages/core/src/theme.ts` (colors / spacing / radii / type scale).
-2. Design **five screens** plus two interaction states:
-   - **Start** — hero, two CTAs (Take photo / Choose from library), inline privacy disclosure
-   - **Loading** — animated skeleton receipt + `ActivityIndicator` + Cancel
-   - **Error** — full-screen error with Retry / Pick different photo
-   - **Bill Review** — three sections (Unassigned / You / Them), inclusive toggles header, sticky Totals footer with safe-area inset
-   - **Inline Edit** — TextInput swap-in on a row (name + price variants)
-   - **SwipeableRow states** — resting, mid-swipe-left underlay visible, mid-swipe-right underlay visible (so designers can see the 70px threshold UX)
-   - **Permission denied** — inline state on Start
-3. Approve, then `get_design_context` + `get_variable_defs` per node to round-trip exact token values back into `theme.ts`. `get_screenshot` for visual-regression baselines.
-4. Code Connect `SwipeableRow`, `Totals`, primary `Button`, inclusive `Toggle` so Figma references the RN source.
+What's there:
+- **Variable collections** — `Color` (17 tokens), `Spacing` (xs/sm/md/lg/xl/xxl/xxxl), `Radius` (sm/md/lg/xl/pill) — all mirror `packages/core/src/theme.ts` 1:1.
+- **Five screens at 393×852** — Start, Loading, Error, Permission denied, Bill review (with sticky footer pinned to safe-area bottom, gradient hairline, warn pill, per-person totals).
+- **Six interaction states** below the screens row — `SwipeableRow` resting / mid-swipe-left (→ You) / mid-swipe-right (Them ←) / same-direction unassign (red), plus inline-edit focus states for name and price with cursor + keyboard hint.
+- All built with auto-layout + Inter type scale, ready to extract tokens via `get_design_context` / `get_variable_defs`.
+
+**Next iterations** (when behaviour or visuals evolve):
+1. `use_figma` to update the existing file (no need to recreate).
+2. `get_design_context` + `get_variable_defs` per node to round-trip exact token values back into `theme.ts`. `get_screenshot` for visual-regression baselines.
+3. Code Connect `SwipeableRow`, `Totals`, primary `Button`, inclusive `Toggle` so Figma references the RN source.
 
 ## Screen-by-screen port
 
