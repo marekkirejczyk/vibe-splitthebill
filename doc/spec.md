@@ -69,22 +69,30 @@ How the per-unit price is decided:
 
 The expansion happens in `billFromReceipt` (`src/lib/store.ts`). The Anthropic model only reports what's printed; the app handles the multiplication / division and ID assignment.
 
-### 1.6 Tax-inclusive receipts
+### 1.6 Charges-already-in-prices toggles
 
-Receipts in India, the EU, the UK, Australia, and many other places print prices that *already include* tax (VAT/GST/MRP). The tax line at the bottom is informational — adding it to per-person totals would double-count. US-style receipts work the opposite way: tax is printed and added on top.
+Some receipts print prices that *already include* a charge that's broken out at the bottom:
+- **Tax** is inclusive on most Indian / EU / UK / Australian receipts ("incl. GST", "VAT included", "MRP"). US-style receipts add tax on top.
+- **Service** is sometimes included in the listed prices (some Asian / European venues that fold a service charge into menu prices and just show the breakdown).
+- **Tip** is almost always additive — but if a receipt lists the gratuity inside the per-item price it would otherwise double-count.
 
-The app picks the right rule automatically:
-- **Textual signal first.** Claude reports `taxBehavior: "inclusive" | "exclusive" | "unknown"` from explicit cues on the receipt ("incl. GST", "MRP", "Sales tax", …).
-- **Math cross-check.** When the text is unknown, the app compares `printedTotal` against both `Σ items + tax + tip + service` (exclusive) and `Σ items + tip + service` (inclusive); the closer of the two wins, within a 1% / 5¢ tolerance.
-- **Safe default.** If both checks are inconclusive — *or* there is no tax line at all — the app treats tax as exclusive (the previous behaviour).
+Each is handled independently. The bill review header shows one toggle per non-zero extra:
 
-Whenever an extracted bill has a non-zero tax line, the bill review header shows a small toggle:
+> ☐ Tax already in prices · ₹91.50  
+> ☐ Tip already in prices · ₹50.00  
+> ☐ Service already in prices · ₹30.00
 
-> ☐ Tax already in prices · ₹91.50
+When **on**, that extra is shown in the UI but **excluded** from per-person totals — flip all three on and `You + Them + Unassigned` lands exactly on the item subtotal.
 
-The checkbox state is the auto-detection result; tapping it flips the rule for the current bill. The choice is persisted in `localStorage` along with the rest of the bill. When **on**, `extras.tax` is reported in the UI but excluded from the per-person totals; **tip** and **service** stay additive in both modes.
+The initial state comes from `detectInclusive(receipt) → { tax, tip, service }`:
+- **Explicit "exclusive" text hint** (`taxBehavior: "exclusive"`) → every flag false (US-style override).
+- **All-inclusive math** (`Σ items ≈ printedTotal` within 1% / 5¢) → every non-zero extra is flagged true; this is the case where the printed total agrees that nothing below the items adds anything new.
+- **Tax-only inclusive** (text hint says so, *or* `Σ items + tip + service ≈ printedTotal`) → tax flagged true; tip and service stay additive.
+- **Anything else** → all flags false (safe default; user can flip).
 
-Implementation: `detectTaxIncluded` in `src/lib/store.ts` resolves the flag at load time; `computeTotals` in `src/lib/splitter.ts` reads `bill.taxIncluded` to decide whether to add tax. Covered by `src/lib/store.test.ts` (`describe("detectTaxIncluded")`) and `src/lib/splitter.test.ts` (`describe("taxIncluded flag")`).
+Flags are persisted in `localStorage` along with the rest of the bill. Bills saved before this feature shipped — including ones that carried the old single `taxIncluded` boolean — migrate transparently on rehydrate.
+
+Implementation: `detectInclusive` in `src/lib/store.ts` resolves the flags at load time; `computeTotals` in `src/lib/splitter.ts` zeros each component individually based on `bill.inclusive`. Covered by `src/lib/store.test.ts` (`describe("detectInclusive")`) and `src/lib/splitter.test.ts` (`describe("inclusive flags")`).
 
 ---
 
@@ -112,7 +120,10 @@ Implementation: `src/lib/store.ts → nextAssignee`. Exhaustively covered by `sr
 subYou     = Σ items where assignee == "you"
 subThem    = Σ items where assignee == "them"
 subU       = Σ items where assignee == null
-tax        = bill.taxIncluded ? 0 : bill.extras.tax    # see §1.6
+# Each extra is zeroed independently when its inclusive flag is on — see §1.6.
+tax        = bill.inclusive.tax     ? 0 : bill.extras.tax
+tip        = bill.inclusive.tip     ? 0 : bill.extras.tip
+service    = bill.inclusive.service ? 0 : bill.extras.service
 extras     = tax + tip + service
 itemsTotal = subYou + subThem + subU
 
@@ -159,8 +170,8 @@ ImageInput ──onPick(File)──▶ Home
                                           │                                               (per-unit price honored
                                           │                                                when receipt prints it;
                                           │                                                otherwise divide & distribute pennies)
-                                          └─▶ detectTaxIncluded(receipt) → bill.taxIncluded   (see §1.6)
-                                          → Bill { items[], extras, taxIncluded }
+                                          └─▶ detectInclusive(receipt) → bill.inclusive { tax, tip, service }  (see §1.6)
+                                          → Bill { items[], extras, inclusive }
                                                               │
                                                               ├──▶ BillReview UI (with SwipeableRow per item)
                                                               └──▶ localStorage("splitbill.v1") sync
@@ -206,7 +217,7 @@ Why these categories: `item` and `discount` map to draggable `Item`s in the UI (
 
 Why two new optional fields instead of one: `quantity` alone wouldn't tell us how to derive the per-unit price. By splitting `quantity` and `unitPrice`, the model reports *exactly what's on the receipt* and the app picks the right strategy (honor printed-per-unit vs divide-and-distribute) without rounding drift from the model's arithmetic. See `§1.5` for the user-facing behavior, and `expandItemLine` in `src/lib/store.ts` for the implementation.
 
-Why the three tax-inclusivity fields: `taxBehavior` is the textual signal lifted straight off the receipt ("incl. GST" → `inclusive`, "Sales tax" → `exclusive`, else `unknown`). `printedSubtotal` and `printedTotal` let the app cross-check the math when the textual signal is missing. The app combines them in `detectTaxIncluded` (`src/lib/store.ts`); see `§1.6` for the user-facing behavior and resolution rules.
+Why the three inclusivity-related fields: `taxBehavior` is the textual signal lifted straight off the receipt ("incl. GST" → `inclusive`, "Sales tax" → `exclusive`, else `unknown`). `printedSubtotal` and `printedTotal` let the app cross-check the math when the textual signal is missing — in particular, `Σ items ≈ printedTotal` is the giveaway that *everything* below the items is already in the prices. The app combines all three in `detectInclusive` (`src/lib/store.ts`); see `§1.6` for the user-facing behavior and resolution rules.
 
 Server: `src/lib/parseReceipt.ts`. Route: `src/app/api/extract/route.ts`. Both covered by `src/app/api/extract/route.test.ts` (mocked) and `src/lib/parseReceipt.test.ts` (live, opt-in).
 

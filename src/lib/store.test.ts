@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   billFromReceipt,
-  detectTaxIncluded,
+  detectInclusive,
   expandItemLine,
   nextAssignee,
   toMultiItem,
@@ -224,12 +224,12 @@ describe("billFromReceipt (the LOAD_RECEIPT effect)", () => {
     // Non-item categories still accumulate into extras
     expect(bill.extras.tax).toBeCloseTo(2.05, 2);
     expect(bill.extras.tip).toBe(0);
-    // No taxBehavior hint + no printedTotal → safe default false
-    expect(bill.taxIncluded).toBe(false);
+    // No textual hint + no printedTotal → safe default { false, false, false }
+    expect(bill.inclusive).toEqual({ tax: false, tip: false, service: false });
   });
 
-  test("propagates detected taxIncluded onto the Bill", () => {
-    const inclusive: ExtractedReceipt = {
+  test("propagates detected inclusive flags onto the Bill", () => {
+    const receipt: ExtractedReceipt = {
       currency: "₹",
       lines: [
         { name: "Pav Bhaji", price: 235, category: "item" },
@@ -240,11 +240,15 @@ describe("billFromReceipt (the LOAD_RECEIPT effect)", () => {
       printedTotal: 1830,
       taxBehavior: "inclusive",
     };
-    expect(billFromReceipt(inclusive).taxIncluded).toBe(true);
+    expect(billFromReceipt(receipt).inclusive).toEqual({
+      tax: true,
+      tip: false,
+      service: false,
+    });
   });
 });
 
-describe("detectTaxIncluded", () => {
+describe("detectInclusive", () => {
   const base = (over: Partial<ExtractedReceipt>): ExtractedReceipt => ({
     currency: "$",
     lines: [],
@@ -257,38 +261,62 @@ describe("detectTaxIncluded", () => {
     ...over,
   });
 
-  test("no tax line → false (early exit)", () => {
+  test("no extras → all flags false", () => {
     expect(
-      detectTaxIncluded(
-        base({
-          lines: [line({ price: 10 })],
-          printedTotal: 10,
-          taxBehavior: "unknown",
-        })
-      )
-    ).toBe(false);
+      detectInclusive(base({ lines: [line({ price: 10 })], printedTotal: 10 }))
+    ).toEqual({ tax: false, tip: false, service: false });
   });
 
-  test("model says 'inclusive' → true regardless of math", () => {
-    // Math actually matches exclusive (50 + 4 = 54), but the textual hint wins.
+  test("all-inclusive (items == printedTotal): every non-zero extra flagged true", () => {
+    // sum(items) = 100 matches printedTotal 100 → all three extras below are
+    // informational, even though no taxBehavior hint is supplied.
     expect(
-      detectTaxIncluded(
+      detectInclusive(
+        base({
+          lines: [
+            line({ price: 100 }),
+            line({ price: 8, category: "tax" }),
+            line({ price: 5, category: "tip" }),
+            line({ price: 3, category: "service" }),
+          ],
+          printedTotal: 100,
+        })
+      )
+    ).toEqual({ tax: true, tip: true, service: true });
+  });
+
+  test("all-inclusive only flags categories that actually have a line", () => {
+    expect(
+      detectInclusive(
+        base({
+          lines: [
+            line({ price: 100 }),
+            line({ price: 10, category: "service" }),
+          ],
+          printedTotal: 100,
+        })
+      )
+    ).toEqual({ tax: false, tip: false, service: true });
+  });
+
+  test("textual 'inclusive' hint flags tax even without printedTotal", () => {
+    expect(
+      detectInclusive(
         base({
           lines: [
             line({ price: 50 }),
             line({ price: 4, category: "tax" }),
           ],
-          printedTotal: 54,
           taxBehavior: "inclusive",
         })
       )
-    ).toBe(true);
+    ).toEqual({ tax: true, tip: false, service: false });
   });
 
-  test("model says 'exclusive' → false regardless of math", () => {
-    // Math actually matches inclusive (sum(items) === printedTotal), but textual hint wins.
+  test("textual 'exclusive' wins over math", () => {
+    // Math matches inclusive (sum(items) == printedTotal), but textual hint wins.
     expect(
-      detectTaxIncluded(
+      detectInclusive(
         base({
           lines: [
             line({ price: 1830 }),
@@ -298,73 +326,71 @@ describe("detectTaxIncluded", () => {
           taxBehavior: "exclusive",
         })
       )
-    ).toBe(false);
+    ).toEqual({ tax: false, tip: false, service: false });
   });
 
-  test("unknown + math matches inclusive → true (Indian GST shape)", () => {
+  test("Indian GST shape (math): items + tip == printedTotal → tax inclusive only", () => {
     expect(
-      detectTaxIncluded(
+      detectInclusive(
         base({
           lines: [
             line({ price: 235 }),
             line({ price: 1595 }),
             line({ price: 91.5, category: "tax" }),
+            line({ price: 50, category: "tip" }),
           ],
-          printedTotal: 1830,
-          taxBehavior: "unknown",
+          printedTotal: 1880, // 235 + 1595 + 50
         })
       )
-    ).toBe(true);
+    ).toEqual({ tax: true, tip: false, service: false });
   });
 
-  test("unknown + math matches exclusive → false (US-style)", () => {
+  test("US-style (math): items + tax == printedTotal → all flags false", () => {
     expect(
-      detectTaxIncluded(
+      detectInclusive(
         base({
           lines: [
             line({ price: 50 }),
             line({ price: 4, category: "tax" }),
           ],
           printedTotal: 54,
-          taxBehavior: "unknown",
         })
       )
-    ).toBe(false);
+    ).toEqual({ tax: false, tip: false, service: false });
   });
 
-  test("unknown + no printedTotal → false (safe default)", () => {
+  test("no printedTotal + no textual hint → safe defaults", () => {
     expect(
-      detectTaxIncluded(
+      detectInclusive(
         base({
           lines: [
             line({ price: 50 }),
             line({ price: 4, category: "tax" }),
+            line({ price: 5, category: "tip" }),
           ],
         })
       )
-    ).toBe(false);
+    ).toEqual({ tax: false, tip: false, service: false });
   });
 
-  test("tolerance: 1% of total is forgiven", () => {
-    // Items 1820, tax 91.5, printedTotal 1830 → inclusive distance 10, exclusive distance 81.5.
-    // tol = max(0.05, 18.30) = 18.30. inclusive within tol and closer → true.
+  test("tolerance forgives 1% drift on the all-inclusive check", () => {
+    // items 1825 vs printedTotal 1830 — 5 off, tol = 18.30 → inclusive.
     expect(
-      detectTaxIncluded(
+      detectInclusive(
         base({
           lines: [
-            line({ price: 1820 }),
+            line({ price: 1825 }),
             line({ price: 91.5, category: "tax" }),
           ],
           printedTotal: 1830,
         })
-      )
+      ).tax
     ).toBe(true);
   });
 
-  test("ambiguous math far outside tolerance → false default", () => {
-    // Items 100, tax 4, printedTotal 200 — neither model matches.
+  test("ambiguous totals far outside tolerance → all defaults", () => {
     expect(
-      detectTaxIncluded(
+      detectInclusive(
         base({
           lines: [
             line({ price: 100 }),
@@ -373,24 +399,6 @@ describe("detectTaxIncluded", () => {
           printedTotal: 200,
         })
       )
-    ).toBe(false);
-  });
-
-  test("tip + service are added to inclusive baseline", () => {
-    // Inclusive shape: items 100 (incl. tax 8), tip 10, service 5, printedTotal 115.
-    // inclusive = 100 + 10 + 5 = 115 ✓; exclusive = 100 + 8 + 10 + 5 = 123 ✗.
-    expect(
-      detectTaxIncluded(
-        base({
-          lines: [
-            line({ price: 100 }),
-            line({ price: 8, category: "tax" }),
-            line({ price: 10, category: "tip" }),
-            line({ price: 5, category: "service" }),
-          ],
-          printedTotal: 115,
-        })
-      )
-    ).toBe(true);
+    ).toEqual({ tax: false, tip: false, service: false });
   });
 });

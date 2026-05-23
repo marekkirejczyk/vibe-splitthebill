@@ -11,11 +11,13 @@ export function computeTotals(bill: Bill): Totals {
   const subYou = sum(bill.items, "you");
   const subThem = sum(bill.items, "them");
   const subU = sum(bill.items, null);
-  // When prices already include tax (e.g. Indian GST, EU VAT), the tax line
-  // is informational — don't add it to per-person totals. Tip and service
-  // are still additive regardless.
-  const tax = bill.taxIncluded ? 0 : bill.extras.tax;
-  const extras = tax + bill.extras.tip + bill.extras.service;
+  // Each extra is zeroed independently when its corresponding `inclusive`
+  // flag is on — those amounts are already baked into the item prices and
+  // adding them again would double-count.
+  const tax = bill.inclusive.tax ? 0 : bill.extras.tax;
+  const tip = bill.inclusive.tip ? 0 : bill.extras.tip;
+  const service = bill.inclusive.service ? 0 : bill.extras.service;
+  const extras = tax + tip + service;
   const itemsTotal = subYou + subThem + subU;
 
   let shareYou: number, shareThem: number, shareU: number;

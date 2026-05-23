@@ -85,8 +85,8 @@ export default function Home() {
         onSwipe={(id, direction) => dispatch({ type: "SWIPE", id, direction })}
         onEditName={(id, name) => dispatch({ type: "EDIT_NAME", id, name })}
         onEditPrice={(id, price) => dispatch({ type: "EDIT_PRICE", id, price })}
-        onSetTaxIncluded={(value) =>
-          dispatch({ type: "SET_TAX_INCLUDED", value })
+        onSetInclusive={(kind, value) =>
+          dispatch({ type: "SET_INCLUSIVE", kind, value })
         }
         onReset={() => dispatch({ type: "RESET" })}
       />

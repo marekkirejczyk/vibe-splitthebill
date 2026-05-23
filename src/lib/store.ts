@@ -7,6 +7,7 @@ import type {
   ExtractCategory,
   ExtractedLine,
   ExtractedReceipt,
+  InclusiveFlags,
   Item,
   MultiItem,
 } from "./types";
@@ -19,7 +20,7 @@ export type Action =
   | { type: "SWIPE"; id: string; direction: "left" | "right" }
   | { type: "EDIT_NAME"; id: string; name: string }
   | { type: "EDIT_PRICE"; id: string; price: number }
-  | { type: "SET_TAX_INCLUDED"; value: boolean }
+  | { type: "SET_INCLUSIVE"; kind: keyof InclusiveFlags; value: boolean }
   | { type: "RESET" };
 
 // Per spec:
@@ -83,39 +84,65 @@ export function billFromReceipt(r: ExtractedReceipt): Bill {
     currency: r.currency || "$",
     items,
     extras,
-    taxIncluded: detectTaxIncluded(r),
+    inclusive: detectInclusive(r),
   };
 }
 
-// Decide whether the receipt's item prices already include the tax line.
-// Resolution order: textual signal from the model → math cross-check
-// against `printedTotal` → safe default (`false`, US-style exclusive).
-export function detectTaxIncluded(r: ExtractedReceipt): boolean {
+// Decide which extras (if any) are already baked into the listed item prices.
+// Each flag is independent so the user can correct a single one without
+// changing the others.
+//
+// Tax: textual signal from the model wins; otherwise math cross-checks
+// `sum(items) + tip + service` against `printedTotal`. Default false.
+//
+// Tip + service: there's no strong textual signal, so we anchor on the
+// "everything inclusive" math case — when `sum(items) ≈ printedTotal`,
+// every extra below it is informational. Default false otherwise (tip and
+// service are nearly always additive).
+export function detectInclusive(r: ExtractedReceipt): InclusiveFlags {
   const sumOf = (cat: ExtractCategory) =>
     r.lines.filter((l) => l.category === cat).reduce((a, l) => a + l.price, 0);
 
+  const items = r.lines
+    .filter((l) => l.category === "item" || l.category === "discount")
+    .reduce((a, l) => a + l.price, 0);
   const tax = sumOf("tax");
-  if (tax === 0) return false;
+  const tip = sumOf("tip");
+  const service = sumOf("service");
 
-  if (r.taxBehavior === "inclusive") return true;
-  if (r.taxBehavior === "exclusive") return false;
-
-  if (typeof r.printedTotal === "number" && Number.isFinite(r.printedTotal)) {
-    const items = r.lines
-      .filter((l) => l.category === "item" || l.category === "discount")
-      .reduce((a, l) => a + l.price, 0);
-    const tip = sumOf("tip");
-    const service = sumOf("service");
-    const inclusive = items + tip + service;
-    const exclusive = items + tax + tip + service;
-    const tol = Math.max(0.05, 0.01 * Math.abs(r.printedTotal));
-    const dInc = Math.abs(inclusive - r.printedTotal);
-    const dExc = Math.abs(exclusive - r.printedTotal);
-    if (dInc <= tol && dInc < dExc) return true;
-    if (dExc <= tol && dExc < dInc) return false;
+  // An explicit "exclusive" textual signal overrides everything below — the
+  // user/receipt told us tax is additive, so don't second-guess from math.
+  if (r.taxBehavior === "exclusive") {
+    return { tax: false, tip: false, service: false };
   }
 
-  return false;
+  const hasTotal = typeof r.printedTotal === "number" && Number.isFinite(r.printedTotal);
+  const total = hasTotal ? (r.printedTotal as number) : NaN;
+  const tol = hasTotal ? Math.max(0.05, 0.01 * Math.abs(total)) : 0;
+
+  // All-inclusive: items alone match the printed total — every visible extra
+  // is informational, regardless of which categories appear.
+  if (hasTotal && Math.abs(items - total) <= tol) {
+    return {
+      tax: tax > 0,
+      tip: tip > 0,
+      service: service > 0,
+    };
+  }
+
+  // Tax-only inclusive: text hint, or items + tip + service match the total
+  // (common Indian / EU / UK shape with a real tip added on top).
+  let taxIncluded = false;
+  if (tax > 0) {
+    if (r.taxBehavior === "inclusive") taxIncluded = true;
+    else if (hasTotal) {
+      const inclusiveDist = Math.abs(items + tip + service - total);
+      const exclusiveDist = Math.abs(items + tax + tip + service - total);
+      taxIncluded = inclusiveDist <= tol && inclusiveDist < exclusiveDist;
+    }
+  }
+
+  return { tax: taxIncluded, tip: false, service: false };
 }
 
 function cryptoId() {
@@ -129,14 +156,19 @@ function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "LOAD_RECEIPT":
       return { bill: billFromReceipt(action.receipt) };
-    case "REHYDRATE":
-      // Bills persisted before the taxIncluded field was introduced won't
-      // have it — default to false (the previous behaviour).
-      return {
-        bill: action.bill
-          ? { ...action.bill, taxIncluded: action.bill.taxIncluded ?? false }
-          : null,
+    case "REHYDRATE": {
+      if (!action.bill) return { bill: null };
+      // Pre-existing bills in localStorage may lack `inclusive` entirely, or
+      // carry a single-boolean `taxIncluded` from the earlier shape — fold
+      // both into the current InclusiveFlags shape.
+      const legacy = action.bill as Bill & { taxIncluded?: boolean };
+      const inclusive: InclusiveFlags = action.bill.inclusive ?? {
+        tax: legacy.taxIncluded ?? false,
+        tip: false,
+        service: false,
       };
+      return { bill: { ...action.bill, inclusive } };
+    }
     case "RESET":
       return { bill: null };
     case "SWIPE": {
@@ -174,9 +206,14 @@ function reducer(state: State, action: Action): State {
         },
       };
     }
-    case "SET_TAX_INCLUDED": {
+    case "SET_INCLUSIVE": {
       if (!state.bill) return state;
-      return { bill: { ...state.bill, taxIncluded: action.value } };
+      return {
+        bill: {
+          ...state.bill,
+          inclusive: { ...state.bill.inclusive, [action.kind]: action.value },
+        },
+      };
     }
   }
 }

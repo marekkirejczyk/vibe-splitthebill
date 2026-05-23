@@ -5,7 +5,7 @@ import type { Bill, Item } from "./types";
 function bill(
   items: Partial<Item>[],
   extras = { tax: 0, tip: 0, service: 0 },
-  taxIncluded = false
+  inclusive: Bill["inclusive"] = { tax: false, tip: false, service: false }
 ): Bill {
   return {
     currency: "$",
@@ -16,7 +16,7 @@ function bill(
       assignee: it.assignee ?? null,
     })),
     extras,
-    taxIncluded,
+    inclusive,
   };
 }
 
@@ -121,8 +121,8 @@ describe("computeTotals", () => {
     expect(t.you).toBe(0.3);
   });
 
-  describe("taxIncluded flag", () => {
-    test("tax is skipped from per-person totals but tip + service still prorate", () => {
+  describe("inclusive flags", () => {
+    test("tax inclusive: tax skipped, tip + service still prorate", () => {
       // Indian-style: items already include GST (₹91.50). Tip ₹50 stays additive.
       const t = computeTotals(
         bill(
@@ -131,23 +131,47 @@ describe("computeTotals", () => {
             { price: 1595, assignee: "you" },
           ],
           { tax: 91.5, tip: 50, service: 0 },
-          true
+          { tax: true, tip: false, service: false }
         )
       );
-      // Tax does not flow into anybody.
-      // You: 1595 + tip * (1595 / 1830); Them: 235 + tip * (235 / 1830).
       expect(t.them).toBeCloseTo(235 + 50 * (235 / 1830), 2);
       expect(t.you).toBeCloseTo(1595 + 50 * (1595 / 1830), 2);
-      // (-0 vs 0 from floating-point residue; toBeCloseTo treats them as equal)
       expect(t.unassigned).toBeCloseTo(0, 2);
-      // Reported extras reflect what's actually added (tip only).
       expect(t.extras).toBe(50);
-      // Money conserved against items + non-inclusive extras.
       expect(t.you + t.them + t.unassigned).toBeCloseTo(235 + 1595 + 50, 2);
     });
 
-    test("partial assignment with taxIncluded: tax stays out, unassigned absorbs no tax", () => {
-      // Same shape as the previous regression test, but tax is inclusive now.
+    test("all three inclusive: per-person totals equal item subtotals exactly", () => {
+      const t = computeTotals(
+        bill(
+          [
+            { price: 235, assignee: "them" },
+            { price: 1595, assignee: "you" },
+          ],
+          { tax: 91.5, tip: 50, service: 30 },
+          { tax: true, tip: true, service: true }
+        )
+      );
+      expect(t.them).toBe(235);
+      expect(t.you).toBe(1595);
+      expect(t.unassigned).toBe(0);
+      expect(t.extras).toBe(0);
+    });
+
+    test("service-only inclusive: tip + tax still added", () => {
+      // Hong-Kong style: 10% service already in prices, sales tax + tip extra.
+      const t = computeTotals(
+        bill(
+          [{ price: 100, assignee: "you" }],
+          { tax: 8, tip: 5, service: 10 },
+          { tax: false, tip: false, service: true }
+        )
+      );
+      expect(t.extras).toBe(13);
+      expect(t.you).toBe(113);
+    });
+
+    test("tax inclusive + partial assignment: unassigned doesn't absorb tax share", () => {
       const t = computeTotals(
         bill(
           [
@@ -155,7 +179,7 @@ describe("computeTotals", () => {
             { price: 1595, assignee: null },
           ],
           { tax: 91.5, tip: 0, service: 0 },
-          true
+          { tax: true, tip: false, service: false }
         )
       );
       expect(t.them).toBe(235);

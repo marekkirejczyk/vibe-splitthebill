@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, LayoutGroup } from "framer-motion";
-import type { Bill } from "@/lib/types";
+import type { Bill, InclusiveFlags } from "@/lib/types";
 import { computeTotals, formatMoney } from "@/lib/splitter";
 import { SwipeableRow } from "./SwipeableRow";
 import { Totals } from "./Totals";
@@ -11,8 +11,14 @@ type Props = {
   onSwipe: (id: string, direction: "left" | "right") => void;
   onEditName: (id: string, name: string) => void;
   onEditPrice: (id: string, price: number) => void;
-  onSetTaxIncluded: (value: boolean) => void;
+  onSetInclusive: (kind: keyof InclusiveFlags, value: boolean) => void;
   onReset: () => void;
+};
+
+const INCLUSIVE_LABELS: Record<keyof InclusiveFlags, string> = {
+  tax: "Tax already in prices",
+  tip: "Tip already in prices",
+  service: "Service already in prices",
 };
 
 export function BillReview({
@@ -20,7 +26,7 @@ export function BillReview({
   onSwipe,
   onEditName,
   onEditPrice,
-  onSetTaxIncluded,
+  onSetInclusive,
   onReset,
 }: Props) {
   const unassigned = bill.items.filter((i) => i.assignee === null);
@@ -81,27 +87,33 @@ export function BillReview({
             New bill
           </button>
         </div>
-        {bill.extras.tax > 0 && (
-          <button
-            type="button"
-            role="switch"
-            aria-checked={bill.taxIncluded}
-            onClick={() => onSetTaxIncluded(!bill.taxIncluded)}
-            className="mt-3 inline-flex items-center gap-2 text-[12px] font-semibold text-muted"
-          >
-            <span
-              aria-hidden
-              className={`flex h-4 w-4 items-center justify-center rounded border-2 ${
-                bill.taxIncluded
-                  ? "border-action bg-action text-white"
-                  : "border-border bg-card"
-              }`}
+        {(["tax", "tip", "service"] as const).map((kind) => {
+          const amount = bill.extras[kind];
+          if (amount <= 0) return null;
+          const checked = bill.inclusive[kind];
+          return (
+            <button
+              key={kind}
+              type="button"
+              role="switch"
+              aria-checked={checked}
+              onClick={() => onSetInclusive(kind, !checked)}
+              className="mt-3 flex w-full items-center gap-2 text-[12px] font-semibold text-muted"
             >
-              {bill.taxIncluded ? "✓" : ""}
-            </span>
-            Tax already in prices · {formatMoney(bill.extras.tax, bill.currency)}
-          </button>
-        )}
+              <span
+                aria-hidden
+                className={`flex h-4 w-4 items-center justify-center rounded border-2 text-[10px] leading-none ${
+                  checked
+                    ? "border-action bg-action text-white"
+                    : "border-border bg-card"
+                }`}
+              >
+                {checked ? "✓" : ""}
+              </span>
+              {INCLUSIVE_LABELS[kind]} · {formatMoney(amount, bill.currency)}
+            </button>
+          );
+        })}
       </header>
 
       <LayoutGroup>

@@ -20,14 +20,20 @@ export type Extras = {
   service: number;
 };
 
+export type InclusiveFlags = {
+  tax: boolean;
+  tip: boolean;
+  service: boolean;
+};
+
 export type Bill = {
   currency: string;
   items: Item[];
   extras: Extras;
-  // True when the extracted item prices already include tax (VAT/GST/MRP),
-  // so `extras.tax` is informational and must NOT be added to per-person
-  // totals. Set by `detectTaxIncluded` at load time; flippable by the user.
-  taxIncluded: boolean;
+  // Which extras are already baked into the listed item prices, and so must
+  // NOT be added to per-person totals. Each flag is independent; the user
+  // can flip any of them via the bill review header.
+  inclusive: InclusiveFlags;
 };
 
 export type ExtractCategory =
