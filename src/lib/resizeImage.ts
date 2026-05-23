@@ -1,5 +1,24 @@
-const MAX_EDGE = 1600;
-const JPEG_QUALITY = 0.85;
+export const MAX_EDGE = 1600;
+export const JPEG_QUALITY = 0.85;
+export const RESIZE_SIZE_THRESHOLD = 1.5 * 1024 * 1024;
+
+export type ResizeTarget = { width: number; height: number };
+
+export function computeResizeTarget(
+  width: number,
+  height: number,
+  sizeBytes: number,
+  maxEdge = MAX_EDGE,
+  sizeThreshold = RESIZE_SIZE_THRESHOLD
+): ResizeTarget | null {
+  const longEdge = Math.max(width, height);
+  if (longEdge <= maxEdge && sizeBytes < sizeThreshold) return null;
+  const scale = Math.min(1, maxEdge / longEdge);
+  return {
+    width: Math.round(width * scale),
+    height: Math.round(height * scale),
+  };
+}
 
 export async function resizeImage(file: File): Promise<Blob> {
   if (!file.type.startsWith("image/")) return file;
@@ -7,20 +26,15 @@ export async function resizeImage(file: File): Promise<Blob> {
   const dataUrl = await readAsDataURL(file);
   const img = await loadImage(dataUrl);
 
-  const longEdge = Math.max(img.width, img.height);
-  if (longEdge <= MAX_EDGE && file.size < 1.5 * 1024 * 1024) {
-    return file;
-  }
-  const scale = Math.min(1, MAX_EDGE / longEdge);
-  const w = Math.round(img.width * scale);
-  const h = Math.round(img.height * scale);
+  const target = computeResizeTarget(img.width, img.height, file.size);
+  if (!target) return file;
 
   const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
+  canvas.width = target.width;
+  canvas.height = target.height;
   const ctx = canvas.getContext("2d");
   if (!ctx) return file;
-  ctx.drawImage(img, 0, 0, w, h);
+  ctx.drawImage(img, 0, 0, target.width, target.height);
 
   return await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
