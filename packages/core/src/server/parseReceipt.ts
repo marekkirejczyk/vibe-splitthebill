@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { ExtractedReceipt } from "./types";
+import type { ExtractedReceipt } from "../types";
 
 const SYSTEM = `You are an expert at reading restaurant and store receipts from photos.
 Extract every visible line that has a price into structured records.

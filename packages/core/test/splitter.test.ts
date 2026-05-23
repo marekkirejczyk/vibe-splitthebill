@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { computeTotals, formatMoney } from "./splitter";
-import type { Bill, Item } from "./types";
+import { computeTotals, formatMoney } from "../src/splitter";
+import type { Bill, Item } from "../src/types";
 
 function bill(
   items: Partial<Item>[],

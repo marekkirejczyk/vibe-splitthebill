@@ -5,8 +5,8 @@ import {
   expandItemLine,
   nextAssignee,
   toMultiItem,
-} from "./store";
-import type { ExtractedLine, ExtractedReceipt, MultiItem } from "./types";
+} from "../src/store";
+import type { ExtractedLine, ExtractedReceipt, MultiItem } from "../src/types";
 
 describe("nextAssignee state machine", () => {
   test("unassigned + left → you", () => {

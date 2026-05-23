@@ -1,12 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { detectInclusive } from "./store";
-import { extractReceipt } from "./parseReceipt";
+import { detectInclusive } from "../src/store";
+import { extractReceipt } from "../src/server/parseReceipt";
 
-const FIX = join(process.cwd(), "tests", "fixtures");
+const FIX = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "tests", "fixtures");
 const RUN = process.env.RUN_ANTHROPIC_TESTS === "1" && !!process.env.ANTHROPIC_API_KEY;
 const POLISH_FIXTURE = join(FIX, "real", "polish-frac.jpg");
 

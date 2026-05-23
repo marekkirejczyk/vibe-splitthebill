@@ -1,14 +1,25 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const FIX = join(process.cwd(), "tests", "fixtures");
+const FIX = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "..",
+  "..",
+  "..",
+  "..",
+  "tests",
+  "fixtures"
+);
 
 // We need to control what the Anthropic SDK does without making real network
-// calls. The route imports extractReceipt from "@/lib/parseReceipt"; mocking
+// calls. The route imports extractReceipt from "@splitbill/core/server"; mocking
 // that module lets us drive every code path of route.ts deterministically.
 const extractReceiptMock = vi.fn();
-vi.mock("@/lib/parseReceipt", () => ({
+vi.mock("@splitbill/core/server", () => ({
   extractReceipt: (...args: unknown[]) => extractReceiptMock(...args),
 }));
 

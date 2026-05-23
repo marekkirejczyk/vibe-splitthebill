@@ -1,6 +1,3 @@
-"use client";
-
-import { useEffect, useReducer, useState } from "react";
 import type {
   Assignee,
   Bill,
@@ -11,8 +8,6 @@ import type {
   Item,
   MultiItem,
 } from "./types";
-
-const STORAGE_KEY = "splitbill.v1";
 
 export type Action =
   | { type: "LOAD_RECEIPT"; receipt: ExtractedReceipt }
@@ -152,7 +147,7 @@ function cryptoId() {
 
 export type State = { bill: Bill | null };
 
-function reducer(state: State, action: Action): State {
+export function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "LOAD_RECEIPT":
       return { bill: billFromReceipt(action.receipt) };
@@ -218,31 +213,4 @@ function reducer(state: State, action: Action): State {
   }
 }
 
-const initial: State = { bill: null };
-
-export function useBillStore() {
-  const [state, dispatch] = useReducer(reducer, initial);
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const loaded = JSON.parse(raw) as State;
-        if (loaded.bill) dispatch({ type: "REHYDRATE", bill: loaded.bill });
-      }
-    } catch {}
-    // Sync flag from localStorage availability is exactly the case useEffect+setState is for.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {}
-  }, [state, hydrated]);
-
-  return [state, dispatch, hydrated] as const;
-}
+export const initialState: State = { bill: null };

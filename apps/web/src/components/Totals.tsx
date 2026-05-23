@@ -1,7 +1,6 @@
 "use client";
 
-import type { Bill } from "@/lib/types";
-import { computeTotals, formatMoney } from "@/lib/splitter";
+import { computeTotals, formatMoney, type Bill } from "@splitbill/core";
 
 export function Totals({ bill }: { bill: Bill }) {
   const t = computeTotals(bill);

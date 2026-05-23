@@ -5,9 +5,9 @@ import { BillReview } from "@/components/BillReview";
 import { ErrorScreen } from "@/components/ErrorScreen";
 import { ImageInput } from "@/components/ImageInput";
 import { LoadingScreen } from "@/components/LoadingScreen";
-import { useBillStore } from "@/lib/store";
-import { resizeImage } from "@/lib/resizeImage";
-import type { ExtractedReceipt } from "@/lib/types";
+import { useBillStore } from "@/lib/useBillStore";
+import { resizeImage } from "@/lib/resizeImageDom";
+import type { ExtractedReceipt } from "@splitbill/core";
 
 type Phase =
   | { kind: "idle" }

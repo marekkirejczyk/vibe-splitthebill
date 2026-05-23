@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
-import { extractReceipt } from "@/lib/parseReceipt";
+import { extractReceipt } from "@splitbill/core/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;

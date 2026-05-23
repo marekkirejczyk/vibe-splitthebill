@@ -3,7 +3,7 @@ import {
   computeResizeTarget,
   MAX_EDGE,
   RESIZE_SIZE_THRESHOLD,
-} from "./resizeImage";
+} from "../src/resizeImage";
 
 describe("computeResizeTarget", () => {
   test("small image well under thresholds → no resize", () => {

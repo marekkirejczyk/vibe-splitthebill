@@ -2,9 +2,12 @@
 
 import { motion, PanInfo, useMotionValue } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
-import type { Assignee, Item } from "@/lib/types";
-import { nextAssignee } from "@/lib/store";
-import { formatMoney } from "@/lib/splitter";
+import {
+  formatMoney,
+  nextAssignee,
+  type Assignee,
+  type Item,
+} from "@splitbill/core";
 
 const THRESHOLD = 70;
 

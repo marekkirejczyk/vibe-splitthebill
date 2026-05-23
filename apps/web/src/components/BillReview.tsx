@@ -1,8 +1,12 @@
 "use client";
 
 import { AnimatePresence, LayoutGroup } from "framer-motion";
-import type { Bill, InclusiveFlags } from "@/lib/types";
-import { computeTotals, formatMoney } from "@/lib/splitter";
+import {
+  computeTotals,
+  formatMoney,
+  type Bill,
+  type InclusiveFlags,
+} from "@splitbill/core";
 import { SwipeableRow } from "./SwipeableRow";
 import { Totals } from "./Totals";
 
