@@ -16,7 +16,7 @@ describe.skipIf(!RUN)("extractReceipt (real Anthropic API)", () => {
   const client = () => new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
   it(
-    "extracts line items from a synthetic receipt",
+    "extracts line items from a synthetic receipt covering all three line shapes",
     async () => {
       const buf = await readFile(join(FIX, "receipt.jpg"));
       const result = await extractReceipt(
@@ -27,20 +27,54 @@ describe.skipIf(!RUN)("extractReceipt (real Anthropic API)", () => {
 
       expect(result.currency).toBeTruthy();
       const items = result.lines.filter((l) => l.category === "item");
-      // The synthetic receipt has 6 items; tolerate ±1 for OCR drift.
-      expect(items.length).toBeGreaterThanOrEqual(5);
-      expect(items.length).toBeLessThanOrEqual(7);
 
-      // Prices we know are on the receipt.
-      const prices = new Set(items.map((l) => l.price));
-      expect(prices).toContain(14.0);
-      expect(prices).toContain(11.5);
+      // The synthetic receipt has 4 singles + 1 "IPA pint × 2" + 1 "2 × Espresso @ $3.50".
+      // Models may report each multi-qty line as ONE line with quantity=2, or
+      // collapse them into 2 separate single-quantity lines. We accept both.
+      // Total units across the bill is always 6.
+      const totalUnits = items.reduce((sum, l) => sum + (l.quantity ?? 1), 0);
+      expect(totalUnits).toBeGreaterThanOrEqual(5);
+      expect(totalUnits).toBeLessThanOrEqual(7);
 
-      // Tax line should be picked up.
+      // Group by name (case-insensitive substring) and verify totals per group.
+      const findByName = (needle: string) =>
+        items.filter((l) => l.name.toLowerCase().includes(needle));
+
+      // Shape 1 — singles
+      const margherita = findByName("margherita");
+      expect(margherita).toHaveLength(1);
+      expect(margherita[0].price).toBeCloseTo(14, 1);
+      expect(findByName("caesar")[0]?.price).toBeCloseTo(11.5, 1);
+      expect(findByName("tiramisu")[0]?.price).toBeCloseTo(11, 1);
+
+      // Shape 2 — IPA pint × 2 ($16.00 total, no per-unit printed): expect
+      // either {quantity:2, price:16, no unitPrice} or two lines of $8.
+      const ipa = findByName("ipa");
+      const ipaUnits = ipa.reduce((s, l) => s + (l.quantity ?? 1), 0);
+      expect(ipaUnits).toBe(2);
+      if (ipa.length === 1 && (ipa[0].quantity ?? 1) === 2) {
+        expect(ipa[0].price).toBeCloseTo(16, 1);
+        expect(ipa[0].unitPrice).toBeUndefined(); // no per-unit on the receipt
+      } else {
+        // Collapsed into two singles.
+        for (const l of ipa) expect(l.price).toBeCloseTo(8, 1);
+      }
+
+      // Shape 3 — 2 × Espresso @ $3.50 ($7.00 total, per-unit IS printed):
+      // expect {quantity:2, price:7, unitPrice:3.5} or two lines of $3.50.
+      const espresso = findByName("espresso");
+      const espressoUnits = espresso.reduce((s, l) => s + (l.quantity ?? 1), 0);
+      expect(espressoUnits).toBe(2);
+      if (espresso.length === 1 && (espresso[0].quantity ?? 1) === 2) {
+        expect(espresso[0].price).toBeCloseTo(7, 1);
+        expect(espresso[0].unitPrice).toBeCloseTo(3.5, 2);
+      } else {
+        for (const l of espresso) expect(l.price).toBeCloseTo(3.5, 2);
+      }
+
+      // Tax and tip still picked up.
       const tax = result.lines.find((l) => l.category === "tax");
-      expect(tax?.price).toBeCloseTo(4.88, 1);
-
-      // Tip line should be picked up.
+      expect(tax?.price).toBeCloseTo(5.08, 1);
       const tip = result.lines.find((l) => l.category === "tip");
       expect(tip?.price).toBeCloseTo(10, 0);
     },

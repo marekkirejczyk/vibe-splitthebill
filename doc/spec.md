@@ -59,6 +59,16 @@ The bill is mirrored to `localStorage` under the key `splitbill.v1`. Refresh res
 - **Anthropic API failure** → 502 with the upstream message.
 - **Zero items extracted** (Claude returned no line items at all) → friendly "I couldn't read any items from that photo." with **Try again** (re-runs against the same file) and **Pick a different photo**.
 
+### 1.5 Multi-quantity items
+
+If a line on the receipt has a quantity multiplier, you'll see that many identical rows in the bill — each independently swipable, so two of three IPAs can go to You and one to Them.
+
+How the per-unit price is decided:
+- **Per-unit printed on the receipt** (e.g. `2 × $8.00   $16.00`, `Espresso  3 @ $3.50   $10.50`): we use the printed per-unit verbatim. If the receipt's arithmetic doesn't quite add up (a common rounding artifact), the printed per-unit still wins.
+- **Only the line total printed** (e.g. `IPA pint x2   $16.00`): we divide the total across the rows. Any leftover cent lands on the first row, so the per-row prices always sum back to the printed line total exactly.
+
+The expansion happens in `billFromReceipt` (`src/lib/store.ts`). The Anthropic model only reports what's printed; the app handles the multiplication / division and ID assignment.
+
 ---
 
 ## 2. Technical architecture
@@ -119,9 +129,16 @@ ImageInput ──onPick(File)──▶ Home
                               │                model:  claude-sonnet-4-6
                               │                tool:   record_receipt  (forced via tool_choice)
                               │
-                              ◀─── ExtractedReceipt { currency, lines[] }
+                              ◀─── ExtractedReceipt { currency, lines[ name, price, category, quantity?, unitPrice? ] }
                               │
-                              └─▶ dispatch LOAD_RECEIPT  ──▶ Bill { items[], extras }
+                              └─▶ dispatch LOAD_RECEIPT
+                                    └─▶ billFromReceipt(receipt)
+                                          └─▶ for each line:
+                                                toMultiItem(line) → expandItemLine(mi) → 1..N Items
+                                                                                          (per-unit price honored
+                                                                                           when receipt prints it;
+                                                                                           otherwise divide & distribute pennies)
+                                          → Bill { items[], extras }
                                                               │
                                                               ├──▶ BillReview UI (with SwipeableRow per item)
                                                               └──▶ localStorage("splitbill.v1") sync
@@ -145,9 +162,11 @@ The server-side prompt forces a single tool call:
           "type": "object",
           "required": ["name", "price", "category"],
           "properties": {
-            "name":     { "type": "string" },
-            "price":    { "type": "number" },
-            "category": { "enum": ["item","tax","tip","service","discount","subtotal","total","other"] }
+            "name":      { "type": "string" },
+            "price":     { "type": "number" }, // LINE TOTAL as printed
+            "category":  { "enum": ["item","tax","tip","service","discount","subtotal","total","other"] },
+            "quantity":  { "type": "integer", "minimum": 1 }, // set when receipt shows "2 ×", "x3", "3 @"
+            "unitPrice": { "type": "number" }                 // set ONLY when per-unit is printed (e.g. "2 × $8.00 $16.00")
           }
         }
       }
@@ -158,7 +177,9 @@ The server-side prompt forces a single tool call:
 
 Why force a tool: we want machine-parseable JSON regardless of how the model wants to chat. Free-form output is unreliable enough to be a recurring source of bugs; a forced tool is a contract.
 
-Why these categories: `item` and `discount` map to draggable `Item`s in the UI. `tax | tip | service` accumulate into `bill.extras` and get prorated. `subtotal | total | other` are read (so the model has a category for what it sees) but discarded — they're redundant with the sum and would double-count if surfaced.
+Why these categories: `item` and `discount` map to draggable `Item`s in the UI (after per-unit expansion). `tax | tip | service` accumulate into `bill.extras` and get prorated. `subtotal | total | other` are read (so the model has a category for what it sees) but discarded — they're redundant with the sum and would double-count if surfaced.
+
+Why two new optional fields instead of one: `quantity` alone wouldn't tell us how to derive the per-unit price. By splitting `quantity` and `unitPrice`, the model reports *exactly what's on the receipt* and the app picks the right strategy (honor printed-per-unit vs divide-and-distribute) without rounding drift from the model's arithmetic. See `§1.5` for the user-facing behavior, and `expandItemLine` in `src/lib/store.ts` for the implementation.
 
 Server: `src/lib/parseReceipt.ts`. Route: `src/app/api/extract/route.ts`. Both covered by `src/app/api/extract/route.test.ts` (mocked) and `src/lib/parseReceipt.test.ts` (live, opt-in).
 

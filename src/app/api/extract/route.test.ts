@@ -105,22 +105,36 @@ describe("POST /api/extract", () => {
     expect(res.status).toBe(413);
   });
 
-  test("200 returns the extracted receipt for a valid JPEG", async () => {
-    extractReceiptMock.mockResolvedValueOnce({
+  test("200 returns the extracted receipt for a valid JPEG, all three line shapes preserved", async () => {
+    // The route is intentionally a thin pass-through: it MUST forward
+    // quantity / unitPrice untouched so the store can expand. Per-line
+    // expansion is the store's job — see src/lib/store.test.ts.
+    const upstream = {
       currency: "$",
       lines: [
-        { name: "Margherita pizza", price: 14, category: "item" },
-        { name: "Caesar salad", price: 11.5, category: "item" },
-        { name: "Sales tax", price: 2.04, category: "tax" },
+        // Shape 1: single, no count.
+        { name: "Margherita pizza", price: 14, category: "item" as const },
+        // Shape 2: count + total only — app divides downstream.
+        { name: "IPA pint", price: 16, category: "item" as const, quantity: 2 },
+        // Shape 3: count + per-unit + total — printed-per-unit wins downstream.
+        {
+          name: "Espresso",
+          price: 7,
+          category: "item" as const,
+          quantity: 2,
+          unitPrice: 3.5,
+        },
+        { name: "Sales tax", price: 2.04, category: "tax" as const },
       ],
-    });
+    };
+    extractReceiptMock.mockResolvedValueOnce(upstream);
     const form = new FormData();
     form.append("image", await fixtureFile("receipt.jpg", "image/jpeg"));
     const res = await postWithForm(form);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.currency).toBe("$");
-    expect(body.lines).toHaveLength(3);
+    // Byte-for-byte pass-through, including the new quantity / unitPrice fields.
+    expect(body).toEqual(upstream);
     expect(extractReceiptMock).toHaveBeenCalledTimes(1);
     // The 3rd arg is the mime type passed to the SDK.
     expect(extractReceiptMock.mock.calls[0][2]).toBe("image/jpeg");

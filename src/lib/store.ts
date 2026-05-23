@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useReducer, useState } from "react";
-import type { Assignee, Bill, ExtractedReceipt, Item } from "./types";
+import type {
+  Assignee,
+  Bill,
+  ExtractedLine,
+  ExtractedReceipt,
+  Item,
+  MultiItem,
+} from "./types";
 
 const STORAGE_KEY = "splitbill.v1";
 
@@ -26,17 +33,46 @@ export function nextAssignee(current: Assignee, dir: "left" | "right"): Assignee
   return dir === "right" ? null : "you";
 }
 
-function billFromReceipt(r: ExtractedReceipt): Bill {
+export function toMultiItem(line: ExtractedLine): MultiItem {
+  const raw = line.quantity ?? 1;
+  const q = Math.max(1, Math.floor(Number.isFinite(raw) ? raw : 1));
+  return {
+    name: line.name,
+    lineTotal: line.price,
+    quantity: q,
+    unitPrice: line.unitPrice,
+  };
+}
+
+export function expandItemLine(
+  mi: MultiItem
+): Pick<Item, "name" | "price">[] {
+  if (mi.quantity <= 1) return [{ name: mi.name, price: mi.lineTotal }];
+
+  if (typeof mi.unitPrice === "number" && Number.isFinite(mi.unitPrice)) {
+    return Array.from({ length: mi.quantity }, () => ({
+      name: mi.name,
+      price: mi.unitPrice!,
+    }));
+  }
+
+  const cents = Math.round(mi.lineTotal * 100);
+  const baseCents = Math.floor(cents / mi.quantity);
+  const remainder = cents - baseCents * mi.quantity;
+  return Array.from({ length: mi.quantity }, (_, i) => ({
+    name: mi.name,
+    price: (baseCents + (i < remainder ? 1 : 0)) / 100,
+  }));
+}
+
+export function billFromReceipt(r: ExtractedReceipt): Bill {
   const items: Item[] = [];
   const extras = { tax: 0, tip: 0, service: 0 };
   for (const line of r.lines) {
     if (line.category === "item" || line.category === "discount") {
-      items.push({
-        id: cryptoId(),
-        name: line.name,
-        price: line.price,
-        assignee: null,
-      });
+      for (const unit of expandItemLine(toMultiItem(line))) {
+        items.push({ id: cryptoId(), assignee: null, ...unit });
+      }
     } else if (line.category === "tax") extras.tax += line.price;
     else if (line.category === "tip") extras.tip += line.price;
     else if (line.category === "service") extras.service += line.price;

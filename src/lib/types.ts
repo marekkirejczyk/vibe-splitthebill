@@ -7,6 +7,13 @@ export type Item = {
   assignee: Assignee;
 };
 
+export type MultiItem = {
+  name: string;
+  lineTotal: number;
+  quantity: number;
+  unitPrice?: number;
+};
+
 export type Extras = {
   tax: number;
   tip: number;
@@ -33,6 +40,8 @@ export type ExtractedLine = {
   name: string;
   price: number;
   category: ExtractCategory;
+  quantity?: number;
+  unitPrice?: number;
 };
 
 export type ExtractedReceipt = {

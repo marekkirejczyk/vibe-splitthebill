@@ -39,15 +39,15 @@ const RECEIPT_HTML = `<!doctype html>
   <div class="line"><span>Margherita pizza</span><span>$14.00</span></div>
   <div class="line"><span>Caesar salad</span><span>$11.50</span></div>
   <div class="line"><span>Sparkling water</span><span>$4.00</span></div>
-  <div class="line"><span>IPA pint</span><span>$8.00</span></div>
+  <div class="line"><span>IPA pint &times; 2</span><span>$16.00</span></div>
+  <div class="line"><span>2 &times; Espresso &nbsp;@ $3.50</span><span>$7.00</span></div>
   <div class="line"><span>Tiramisu</span><span>$11.00</span></div>
-  <div class="line"><span>Aperol spritz</span><span>$12.50</span></div>
   <div class="sep"></div>
-  <div class="line"><span>Subtotal</span><span>$61.00</span></div>
-  <div class="line"><span>Tax (8%)</span><span>$4.88</span></div>
+  <div class="line"><span>Subtotal</span><span>$63.50</span></div>
+  <div class="line"><span>Tax (8%)</span><span>$5.08</span></div>
   <div class="line"><span>Tip</span><span>$10.00</span></div>
   <div class="sep"></div>
-  <div class="line tot"><span>TOTAL</span><span>$75.88</span></div>
+  <div class="line tot"><span>TOTAL</span><span>$78.58</span></div>
 </div></body></html>`;
 
 const NOT_RECEIPT_HTML = `<!doctype html>
