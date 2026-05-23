@@ -1,11 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { detectInclusive } from "./store";
 import { extractReceipt } from "./parseReceipt";
 
 const FIX = join(process.cwd(), "tests", "fixtures");
 const RUN = process.env.RUN_ANTHROPIC_TESTS === "1" && !!process.env.ANTHROPIC_API_KEY;
+const POLISH_FIXTURE = join(FIX, "real", "polish-frac.jpg");
 
 // These tests call the real Anthropic API and consume credits. They're skipped
 // unless RUN_ANTHROPIC_TESTS=1 AND ANTHROPIC_API_KEY is set in the env.
@@ -77,6 +80,42 @@ describe.skipIf(!RUN)("extractReceipt (real Anthropic API)", () => {
       expect(tax?.price).toBeCloseTo(5.08, 1);
       const tip = result.lines.find((l) => l.category === "tip");
       expect(tip?.price).toBeCloseTo(10, 0);
+    },
+    60_000
+  );
+
+  it.skipIf(!existsSync(POLISH_FIXTURE))(
+    "Polish PARAGON FISKALNY: extracts SUMA PLN as printedTotal and auto-detects inclusive VAT",
+    async () => {
+      // Drop the photo at tests/fixtures/real/polish-frac.jpg to enable this.
+      // Receipt under test: Frac Bis Sp. z o.o., items sum 159.89 == SUMA PLN.
+      const buf = await readFile(POLISH_FIXTURE);
+      const result = await extractReceipt(
+        client(),
+        buf.toString("base64"),
+        "image/jpeg"
+      );
+
+      expect(result.currency.toLowerCase()).toMatch(/pln|zł|zl/);
+
+      // The total line MUST come through so detectInclusive can fire on the
+      // math signal — that's the whole reason this fixture exists.
+      expect(result.printedTotal).toBeCloseTo(159.89, 1);
+
+      const items = result.lines.filter((l) => l.category === "item");
+      const itemsSum = items.reduce((a, l) => a + l.price, 0);
+      expect(itemsSum).toBeCloseTo(159.89, 1);
+
+      // "Sp.op.A" / "Sp.op.C" are subtotals-by-tax-rate, NOT tax — they
+      // would double-count items if extracted as tax.
+      const taxSum = result.lines
+        .filter((l) => l.category === "tax")
+        .reduce((a, l) => a + l.price, 0);
+      expect(taxSum).toBeLessThan(20); // just PTU A (2.55) + PTU C (6.96) ≈ 9.51
+
+      // End-to-end: the inclusive flag for tax should auto-detect.
+      const inc = detectInclusive(result);
+      expect(inc.tax).toBe(true);
     },
     60_000
   );

@@ -401,4 +401,37 @@ describe("detectInclusive", () => {
       )
     ).toEqual({ tax: false, tip: false, service: false });
   });
+
+  test("Polish PARAGON FISKALNY shape: items match SUMA PLN exactly, two PTU lines are inclusive", () => {
+    // Frac Bis Sp. z o.o., Warszawa — items sum 159.89 == SUMA PLN 159.89;
+    // PTU A (23%) = 2.55 and PTU C (5%) = 6.96 are informational VAT.
+    expect(
+      detectInclusive(
+        base({
+          currency: "PLN",
+          lines: [
+            line({ name: "OGÓREK SZKLARNIOWY", price: 2.23 }),
+            line({ name: "JAN.N WORKI LD MAGNUM", price: 8.99 }),
+            line({ name: "POMIDOR POLSKI OKRĄGŁY", price: 7.0 }),
+            line({ name: "BORÓWKA AMERYKAŃSKA", price: 34.99 }),
+            line({ name: "HOCHLAND SEREK ALMETTE", price: 6.99 }),
+            line({ name: "MLEKOVITA SER FAVITA", price: 7.99 }),
+            line({ name: "TRUSKAWKA", price: 29.99 }),
+            line({ name: "TARCZYŃSKI PARÓWKI", price: 8.99 }),
+            line({ name: "BG CHLEB RUSTYKALNY", price: 12.85 }),
+            line({ name: "BG CHLEB RUSTYKALNY", price: 12.85 }),
+            line({ name: "WAFLE RYŻOWE W CZEKOL.", price: 4.65 }),
+            line({ name: "KUPIEC WAFLE KUKURYDZIANE", price: 7.49 }),
+            line({ name: "WAFLE KUKURYDZI Z SIEM.NIANYM", price: 6.49 }),
+            line({ name: "DEVELEY NACHOS TORTILLA CHIPS", price: 8.39 }),
+            line({ name: "PTU A=23,00%", price: 2.55, category: "tax" }),
+            line({ name: "PTU C=5,00%", price: 6.96, category: "tax" }),
+          ],
+          printedSubtotal: 159.89,
+          printedTotal: 159.89,
+          // No textBehavior hint — we rely on the math signal alone.
+        })
+      )
+    ).toEqual({ tax: true, tip: false, service: false });
+  });
 });
