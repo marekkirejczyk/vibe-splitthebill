@@ -224,7 +224,7 @@ Root `.npmrc` uses `node-linker=hoisted` — Expo's recommended pnpm-monorepo co
 
 ## 12. Migration phases
 
-The whole 8-milestone plan lives in [`../plan.md`](../plan.md); execution detail in [`../plan-m12.md`](../plan-m12.md), [`../plan-m3.md`](../plan-m3.md), and [`../plan-m4.md`](../plan-m4.md).
+The whole 8-milestone plan lives in [`../plan.md`](../plan.md); execution detail in [`../plan-m12.md`](../plan-m12.md), [`../plan-m3.md`](../plan-m3.md), [`../plan-m4.md`](../plan-m4.md), and [`../plan-m5.md`](../plan-m5.md).
 
 | Phase | Goal | Status |
 |---|---|---|
@@ -232,14 +232,15 @@ The whole 8-milestone plan lives in [`../plan.md`](../plan.md); execution detail
 | **M2** | Expo scaffold, `theme.ts`, Metro watchFolders, Figma file | ✅ shipped |
 | **M3** | Static screens against a mock bill — no gestures yet (tap-to-cycle) | ✅ shipped |
 | **M4** | Real `expo-image-picker` + `expo-image-manipulator` + `fetch` to `/api/extract`, `Alert.alert` cancel + permission flows, success haptic | ✅ shipped |
-| **M5** | `SwipeableRow` gestures with Reanimated + medium haptic | next |
-| **M6** | Inline edit, `KeyboardAvoidingView`, `AsyncStorage` adapter, inclusive `Switch`, "New bill" Alert | |
-| **M7** | Polish: safe areas, splash screen, app icon, accessibility, section animations | |
+| **M5** | `SwipeableRow` gestures: `Gesture.Pan` + Reanimated translateX + two stacked underlay layers + medium haptic on commit. Tap-to-cycle removed | ✅ shipped |
+| **M6** | Inline edit, `KeyboardAvoidingView`, `AsyncStorage` adapter, "New bill" Alert | next |
+| **M7** | Polish: safe areas, splash screen, app icon, **`accessibilityActions` for VoiceOver / TalkBack swipe equivalents (M5 follow-up)**, section animations | |
 | **M8** | EAS Build preview, TestFlight internal, Android internal track, physical-device smoke + shared-secret auth on `/api/extract` | |
 
 ## 13. Risks and open questions
 
-- **Backend exposure (M8 follow-up).** `/api/extract` is still unauthenticated as of M4 — mobile and web both call it as-is. **M8** will land a shared-secret header before TestFlight / Play internal: mobile reads `EXPO_PUBLIC_API_SECRET` and sends `x-splitbill-key: <secret>`; the route compares against `process.env.API_SHARED_SECRET` and 401s on mismatch. Until then, don't publicise the deployed URL outside the team.
+- **VoiceOver / TalkBack swipe equivalents (M7 follow-up).** M5 removed the M3 tap-to-cycle affordance, so accessibility users currently have no way to assign rows. **M7** lands `accessibilityActions={[{name:"assignYou"}, {name:"assignThem"}, {name:"unassign"}]}` filtered by current assignee on each row, with `onAccessibilityAction` dispatching the correct `SWIPE` direction. VoiceOver users hit them via three-finger-swipe up/down on the row.
+- **Backend exposure (M8 follow-up).** `/api/extract` is still unauthenticated as of M5 — mobile and web both call it as-is. **M8** will land a shared-secret header before TestFlight / Play internal: mobile reads `EXPO_PUBLIC_API_SECRET` and sends `x-splitbill-key: <secret>`; the route compares against `process.env.API_SHARED_SECRET` and 401s on mismatch. Until then, don't publicise the deployed URL outside the team.
 - **CORS — not needed.** Confirmed in M4: RN `fetch` is non-browser, so no OPTIONS preflight is triggered for `POST multipart/form-data`. If a future web client moves off `apps/web` (different origin), add `Access-Control-Allow-Origin` to the route's response headers.
 - **iOS permission strings.** Must be empathetic and specific (already wired in `app.config.ts`): `NSCameraUsageDescription = "Take a photo of your receipt so we can split it."`, same shape for `NSPhotoLibraryUsageDescription`.
 - **Bundle size.** Reanimated + Gesture Handler + Image Manipulator add ~3 MB. Acceptable for a bill-splitting app; flag if tight.
