@@ -21,6 +21,16 @@ out/
 build
 dist
 
+# expo / react-native
+.expo/
+.expo-shared/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
 # misc
 .DS_Store
 *.pem
