@@ -1,6 +1,6 @@
 import { theme } from "@splitbill/core";
 import { LinearGradient } from "expo-linear-gradient";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { PrimaryButton } from "./PrimaryButton";
 import { SecondaryButton } from "./SecondaryButton";
@@ -8,10 +8,9 @@ import { SecondaryButton } from "./SecondaryButton";
 type Props = {
   onTakePhoto: () => void;
   onChooseLibrary: () => void;
-  onSimulateError?: () => void; // dev-only hatch so designers can reach ErrorScreen; removed in M4
 };
 
-export function StartScreen({ onTakePhoto, onChooseLibrary, onSimulateError }: Props) {
+export function StartScreen({ onTakePhoto, onChooseLibrary }: Props) {
   return (
     <SafeAreaView style={styles.root} edges={["top", "left", "right", "bottom"]}>
       <View style={styles.blobWrap} pointerEvents="none">
@@ -47,11 +46,6 @@ export function StartScreen({ onTakePhoto, onChooseLibrary, onSimulateError }: P
         <Text style={styles.privacy}>
           Photo sent to Anthropic to read line items, then discarded.
         </Text>
-        {onSimulateError ? (
-          <Pressable onPress={onSimulateError} style={styles.devHatch} testID="start-show-error">
-            <Text style={styles.devHatchLabel}>Show error state (dev)</Text>
-          </Pressable>
-        ) : null}
       </View>
     </SafeAreaView>
   );
@@ -116,14 +110,5 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 16,
     marginTop: theme.spacing.xs,
-  },
-  devHatch: {
-    alignItems: "center",
-    paddingTop: theme.spacing.sm,
-  },
-  devHatchLabel: {
-    fontSize: 11,
-    color: theme.color.muted,
-    textDecorationLine: "underline",
   },
 });
