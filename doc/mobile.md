@@ -120,7 +120,7 @@ The underlay view sits behind the row and computes label/color by calling `nextA
 
 ## 8. Image flow
 
-`expo-image-picker` → `expo-image-manipulator` → multipart `fetch` to `${API_BASE_URL}/api/extract`. `API_BASE_URL` is read via `expo-constants` from `app.config.ts` `extra.apiBaseUrl`.
+The pipeline lives in `apps/mobile/src/lib/extractFromPicker.ts`: `expo-image-picker` (permission + native picker) → `expo-image-manipulator` (resize + force-JPEG so iOS HEIC becomes a MIME the route accepts) → multipart `fetch` to `${apiBaseUrl()}/api/extract`. `apiBaseUrl()` reads `Constants.expoConfig.extra.apiBaseUrl` from `app.config.ts`.
 
 ```ts
 import * as ImagePicker from "expo-image-picker";
@@ -148,6 +148,10 @@ const res = await fetch(`${API_BASE_URL}/api/extract`, {
 ```
 
 `extractReceipt` (the Anthropic SDK wrapper in `@splitbill/core/server`) **never runs on the device** — mobile always goes through the hosted `/api/extract` so the API key stays server-side.
+
+The orchestrator surfaces two error classes the host pattern-matches: `PickerCancelledError` (the user backed out of the native picker — silent return to Start) and `PermissionDeniedError` (camera or media-library access denied — `Alert.alert` with an "Open Settings" deep link via `Linking.openSettings()`). Everything else funnels into `ErrorScreen`. Cancel mid-upload uses an `AbortController` plumbed through to `fetch`, and a native `Alert.alert` ("Stop reading receipt?") confirms the cancel before aborting. A successful `LOAD_RECEIPT` dispatch fires `Haptics.notificationAsync(Success)`.
+
+The web export (used by the Playwright smoke in `apps/mobile/e2e/smoke.spec.ts`) short-circuits to the M3 `delayedExtract()` mock via `Platform.OS === "web"` — the real picker isn't reachable in a browser. Native always hits the real pipeline.
 
 ## 9. Persistence
 
@@ -220,23 +224,23 @@ Root `.npmrc` uses `node-linker=hoisted` — Expo's recommended pnpm-monorepo co
 
 ## 12. Migration phases
 
-The whole 8-milestone plan lives in [`../plan.md`](../plan.md); M1+M2 execution detail in [`../plan-m12.md`](../plan-m12.md).
+The whole 8-milestone plan lives in [`../plan.md`](../plan.md); execution detail in [`../plan-m12.md`](../plan-m12.md), [`../plan-m3.md`](../plan-m3.md), and [`../plan-m4.md`](../plan-m4.md).
 
 | Phase | Goal | Status |
 |---|---|---|
 | **M1** | pnpm workspace, extract `@splitbill/core`, web continues to ship | ✅ shipped |
 | **M2** | Expo scaffold, `theme.ts`, Metro watchFolders, Figma file | ✅ shipped |
-| **M3** | Static screens against a mock bill — no gestures yet (tap-to-cycle) | next |
-| **M4** | `expo-image-picker` + `expo-image-manipulator` + `fetch` to `/api/extract` + CORS / shared-secret | |
-| **M5** | `SwipeableRow` gestures with Reanimated + medium haptic | |
+| **M3** | Static screens against a mock bill — no gestures yet (tap-to-cycle) | ✅ shipped |
+| **M4** | Real `expo-image-picker` + `expo-image-manipulator` + `fetch` to `/api/extract`, `Alert.alert` cancel + permission flows, success haptic | ✅ shipped |
+| **M5** | `SwipeableRow` gestures with Reanimated + medium haptic | next |
 | **M6** | Inline edit, `KeyboardAvoidingView`, `AsyncStorage` adapter, inclusive `Switch`, "New bill" Alert | |
 | **M7** | Polish: safe areas, splash screen, app icon, accessibility, section animations | |
-| **M8** | EAS Build preview, TestFlight internal, Android internal track, physical-device smoke | |
+| **M8** | EAS Build preview, TestFlight internal, Android internal track, physical-device smoke + shared-secret auth on `/api/extract` | |
 
 ## 13. Risks and open questions
 
-- **Backend exposure.** Today `/api/extract` is unauthenticated, intended for first-party browser use. Once a mobile binary calls it, add a shared-secret header or short-lived signed token to prevent abuse. Decide before **M4**.
-- **CORS.** Mobile `fetch` ignores CORS, but if Vercel deployment adds OPTIONS preflight for any reason, add `Access-Control-Allow-Origin` allow-list including `splitbill://`.
+- **Backend exposure (M8 follow-up).** `/api/extract` is still unauthenticated as of M4 — mobile and web both call it as-is. **M8** will land a shared-secret header before TestFlight / Play internal: mobile reads `EXPO_PUBLIC_API_SECRET` and sends `x-splitbill-key: <secret>`; the route compares against `process.env.API_SHARED_SECRET` and 401s on mismatch. Until then, don't publicise the deployed URL outside the team.
+- **CORS — not needed.** Confirmed in M4: RN `fetch` is non-browser, so no OPTIONS preflight is triggered for `POST multipart/form-data`. If a future web client moves off `apps/web` (different origin), add `Access-Control-Allow-Origin` to the route's response headers.
 - **iOS permission strings.** Must be empathetic and specific (already wired in `app.config.ts`): `NSCameraUsageDescription = "Take a photo of your receipt so we can split it."`, same shape for `NSPhotoLibraryUsageDescription`.
 - **Bundle size.** Reanimated + Gesture Handler + Image Manipulator add ~3 MB. Acceptable for a bill-splitting app; flag if tight.
 - **Offline.** No on-device OCR. Fail-fast with a friendly error when `fetch` throws `Network request failed`. ML Kit fallback is a v2 nicety.

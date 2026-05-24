@@ -1,9 +1,13 @@
 import { expect, test } from "@playwright/test";
 
-// Drives the full M3 phase machine end-to-end against the Expo web export.
+// Drives the phase machine end-to-end against the Expo web export. Web has
+// no native picker, so the host short-circuits to the mock fixture via
+// Platform.OS === "web" (see apps/mobile/app/index.tsx). M4 removed the
+// dev-only "Show error" hatch on Start — the error/retry leg of this smoke
+// is verified by jest in apps/mobile/src/lib/extractFromPicker.test.ts now.
 // Records a video of the whole flow + writes a keyframe screenshot at each
 // notable state transition. The artifacts land in e2e/artifacts/.
-test("M3: start → load → bill → assign → toggle → reset → error → retry", async ({ page }, testInfo) => {
+test("phase machine: start → load → bill → assign → toggle → reset", async ({ page }, testInfo) => {
   const shot = async (name: string) => {
     const file = testInfo.outputPath(`${name}.png`);
     await page.screenshot({ path: file, fullPage: false });
@@ -61,16 +65,4 @@ test("M3: start → load → bill → assign → toggle → reset → error → 
   await page.getByTestId("bill-reset").click();
   await expect(page.getByTestId("start-take-photo")).toBeVisible();
   await shot("07-back-to-start");
-
-  // Dev-only "Show error state" link → ErrorScreen.
-  await page.getByTestId("start-show-error").click();
-  await expect(page.getByTestId("error-retry")).toBeVisible();
-  await expect(page.getByTestId("error-start-over")).toBeVisible();
-  await shot("08-error");
-
-  // "Try again" loops back through Loading → BillReview.
-  await page.getByTestId("error-retry").click();
-  await expect(page.getByTestId("loading-spinner")).toBeVisible();
-  await expect(page.getByTestId("section-unassigned")).toBeVisible({ timeout: 5_000 });
-  await shot("09-recovered");
 });
