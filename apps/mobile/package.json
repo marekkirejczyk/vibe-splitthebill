@@ -9,7 +9,9 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "echo 'mobile lint: not configured yet (M3+)' && exit 0",
-    "test": "jest"
+    "test": "jest",
+    "e2e": "EXPO_OFFLINE=1 expo export --platform web --output-dir web-dist && playwright test",
+    "e2e:no-build": "playwright test"
   },
   "dependencies": {
     "@expo/metro-runtime": "^56.0.12",
@@ -24,13 +26,16 @@
     "expo-router": "~56.2.6",
     "expo-status-bar": "~56.0.4",
     "react": "19.2.3",
+    "react-dom": "19.2.3",
     "react-native": "0.85.3",
     "react-native-gesture-handler": "~2.31.2",
     "react-native-reanimated": "~4.3.1",
     "react-native-safe-area-context": "~5.8.0",
-    "react-native-screens": "~4.25.2"
+    "react-native-screens": "~4.25.2",
+    "react-native-web": "~0.21.2"
   },
   "devDependencies": {
+    "@playwright/test": "1.56.1",
     "@testing-library/react-native": "^13.3.3",
     "@types/jest": "^29.5.14",
     "@types/react": "~19.2.2",
