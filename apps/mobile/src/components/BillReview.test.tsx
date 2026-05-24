@@ -5,8 +5,13 @@ import {
   type Bill,
   type State,
 } from "@splitbill/core";
-import { fireEvent, render, screen } from "@testing-library/react-native";
+import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { useReducer } from "react";
+import { State as GestureState } from "react-native-gesture-handler";
+import {
+  fireGestureHandler,
+  getByGestureTestId,
+} from "react-native-gesture-handler/jest-utils";
 import { mockReceipt } from "../fixtures/mockBill";
 import { BillReview } from "./BillReview";
 
@@ -24,11 +29,17 @@ test("loads the mock receipt with all items unassigned and total visible", () =>
   expect(screen.queryByTestId("section-them")).toBeNull();
 });
 
-test("tapping an unassigned row moves it into the You section", () => {
+test("swiping an unassigned row left moves it into the You section", () => {
   const bill = billFromReceipt(mockReceipt);
   const firstUnassigned = bill.items[0];
   render(<Harness initialBill={bill} />);
-  fireEvent.press(screen.getByTestId(`row-${firstUnassigned.id}`));
+  act(() => {
+    fireGestureHandler(getByGestureTestId(`row-${firstUnassigned.id}-pan`), [
+      { state: GestureState.BEGAN, translationX: 0 },
+      { state: GestureState.ACTIVE, translationX: -100 },
+      { state: GestureState.END, translationX: -100 },
+    ]);
+  });
   expect(screen.getByTestId("section-you")).toBeTruthy();
 });
 

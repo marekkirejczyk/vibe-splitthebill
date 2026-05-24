@@ -1,13 +1,36 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 // Drives the phase machine end-to-end against the Expo web export. Web has
 // no native picker, so the host short-circuits to the mock fixture via
-// Platform.OS === "web" (see apps/mobile/app/index.tsx). M4 removed the
-// dev-only "Show error" hatch on Start — the error/retry leg of this smoke
-// is verified by jest in apps/mobile/src/lib/extractFromPicker.test.ts now.
+// Platform.OS === "web" (see apps/mobile/app/index.tsx). M5 replaced the
+// M3 tap-to-cycle SwipeableRow with a real Gesture.Pan implementation, so
+// this e2e drives row assignment via mouse-drag instead of .click().
+// react-native-gesture-handler's web build accepts the pointer sequence
+// below; if it flakes, the documented fallback in plan-m5.md §M5.5 is an
+// env-gated test seam — prefer the explicit seam over coverage loss.
 // Records a video of the whole flow + writes a keyframe screenshot at each
 // notable state transition. The artifacts land in e2e/artifacts/.
-test("phase machine: start → load → bill → assign → toggle → reset", async ({ page }, testInfo) => {
+
+async function swipeRow(
+  page: Page,
+  locator: Locator,
+  direction: "left" | "right",
+): Promise<void> {
+  const box = await locator.boundingBox();
+  if (!box) throw new Error("row has no bounding box");
+  const startX = box.x + box.width / 2;
+  const startY = box.y + box.height / 2;
+  const endX = startX + (direction === "left" ? -120 : 120);
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  // Step through the move so gesture-handler's activeOffsetX engages
+  // before END. A single .move() can register as a tap on web.
+  await page.mouse.move((startX + endX) / 2, startY, { steps: 8 });
+  await page.mouse.move(endX, startY, { steps: 8 });
+  await page.mouse.up();
+}
+
+test("phase machine: start → load → bill → swipe → toggle → reset", async ({ page }, testInfo) => {
   const shot = async (name: string) => {
     const file = testInfo.outputPath(`${name}.png`);
     await page.screenshot({ path: file, fullPage: false });
@@ -31,22 +54,23 @@ test("phase machine: start → load → bill → assign → toggle → reset", a
   await expect(page.getByTestId("totals-footer")).toBeVisible();
   await shot("03-bill-loaded");
 
-  // Tap the first unassigned row — it should move to the You section.
+  // Swipe the first unassigned row left — null + left → "you" via nextAssignee.
   const firstUnassignedRow = page
     .getByTestId("section-unassigned")
     .locator('[data-testid^="row-"]')
     .first();
   const rowId = await firstUnassignedRow.getAttribute("data-testid");
-  await firstUnassignedRow.click();
+  await swipeRow(page, firstUnassignedRow, "left");
   await expect(page.getByTestId("section-you")).toBeVisible();
   if (rowId) {
     await expect(page.getByTestId("section-you").locator(`[data-testid="${rowId}"]`)).toBeVisible();
   }
   await shot("04-assigned-to-you");
 
-  // Tap the same row again — second tap cycles to Them.
+  // Swipe the same row right — "you" + right → "them".
   if (rowId) {
-    await page.getByTestId("section-you").locator(`[data-testid="${rowId}"]`).click();
+    const youRow = page.getByTestId("section-you").locator(`[data-testid="${rowId}"]`);
+    await swipeRow(page, youRow, "right");
     await expect(page.getByTestId("section-them").locator(`[data-testid="${rowId}"]`)).toBeVisible();
   }
   await shot("05-assigned-to-them");
