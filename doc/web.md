@@ -1,8 +1,10 @@
-# Split the bill — specification
+# Split the bill — web specification
 
 A two-person bill splitter. Snap a receipt with your phone, swipe each item left for "You" or right for "Them", and watch the per-person totals settle. Tax, tip, and service charges are prorated automatically against each person's subtotal.
 
 **Design source of truth:** [Figma file](https://www.figma.com/design/YUyO4XQnCwPRtk1K6Asdr1)
+
+This document covers the **web app** at `apps/web/`. For the mobile app see [`mobile.md`](./mobile.md); for the monorepo layout, the shared `@splitbill/core` package, and the cross-platform boundary see [`mobile.md`](./mobile.md) §1.
 
 ---
 
@@ -67,7 +69,7 @@ How the per-unit price is decided:
 - **Per-unit printed on the receipt** (e.g. `2 × $8.00   $16.00`, `Espresso  3 @ $3.50   $10.50`): we use the printed per-unit verbatim. If the receipt's arithmetic doesn't quite add up (a common rounding artifact), the printed per-unit still wins.
 - **Only the line total printed** (e.g. `IPA pint x2   $16.00`): we divide the total across the rows. Any leftover cent lands on the first row, so the per-row prices always sum back to the printed line total exactly.
 
-The expansion happens in `billFromReceipt` (`src/lib/store.ts`). The Anthropic model only reports what's printed; the app handles the multiplication / division and ID assignment.
+The expansion happens in `billFromReceipt` (`packages/core/src/store.ts`). The Anthropic model only reports what's printed; the app handles the multiplication / division and ID assignment.
 
 ### 1.6 Charges-already-in-prices toggles
 
@@ -92,7 +94,7 @@ The initial state comes from `detectInclusive(receipt) → { tax, tip, service }
 
 Flags are persisted in `localStorage` along with the rest of the bill. Bills saved before this feature shipped — including ones that carried the old single `taxIncluded` boolean — migrate transparently on rehydrate.
 
-Implementation: `detectInclusive` in `src/lib/store.ts` resolves the flags at load time; `computeTotals` in `src/lib/splitter.ts` zeros each component individually based on `bill.inclusive`. Covered by `src/lib/store.test.ts` (`describe("detectInclusive")`) and `src/lib/splitter.test.ts` (`describe("inclusive flags")`).
+Implementation: `detectInclusive` in `packages/core/src/store.ts` resolves the flags at load time; `computeTotals` in `packages/core/src/splitter.ts` zeros each component individually based on `bill.inclusive`. Covered by `packages/core/test/store.test.ts` (`describe("detectInclusive")`) and `packages/core/test/splitter.test.ts` (`describe("inclusive flags")`).
 
 ---
 
@@ -110,7 +112,7 @@ Implementation: `detectInclusive` in `src/lib/store.ts` resolves the flags at lo
 
 **Invariant:** a swipe in the *same direction* as the row's current owner always unassigns. A swipe in the *opposite direction* either assigns (from unassigned) or switches sides. This makes "I made a mistake — undo" naturally reachable.
 
-Implementation: `src/lib/store.ts → nextAssignee`. Exhaustively covered by `src/lib/store.test.ts`.
+Implementation: `packages/core/src/store.ts → nextAssignee`. Exhaustively covered by `packages/core/test/store.test.ts`.
 
 ### 2.2 Totals math
 
@@ -144,7 +146,7 @@ unassigned = round(subU    + shareU,    2)
 
 **Money is conserved.** `you + them + unassigned == subYou + subThem + subU + extras` (to the cent). This means the warning pill in the footer (`"₹X still unassigned"`) accounts for both unassigned food and the share of extras it currently carries — clearing the bill always drives that number to zero.
 
-Implementation: `src/lib/splitter.ts → computeTotals`. Edge cases pinned by `src/lib/splitter.test.ts`.
+Implementation: `packages/core/src/splitter.ts → computeTotals`. Edge cases pinned by `packages/core/test/splitter.test.ts`.
 
 ### 2.3 Data flow
 
@@ -153,9 +155,11 @@ ImageInput ──onPick(File)──▶ Home
                               │
                               ├─▶ resizeImage(file) ──── canvas downscale to ≤1600 px long edge, re-encode as JPEG q=0.85
                               │                          (skipped if already small & under 1.5 MB)
+                              │                          (wrapper in apps/web/src/lib/resizeImageDom.ts;
+                              │                           pure computeResizeTarget lives in @splitbill/core)
                               │
                               ├─▶ POST /api/extract  (multipart, key = "image")
-                              │     └─▶ extractReceipt(client, base64, mime)
+                              │     └─▶ extractReceipt(client, base64, mime)         (from @splitbill/core/server)
                               │           └─▶ Anthropic Messages API
                               │                model:  claude-sonnet-4-6
                               │                tool:   record_receipt  (forced via tool_choice)
@@ -164,7 +168,7 @@ ImageInput ──onPick(File)──▶ Home
                                                        printedSubtotal?, printedTotal?, taxBehavior? }
                               │
                               └─▶ dispatch LOAD_RECEIPT
-                                    └─▶ billFromReceipt(receipt)
+                                    └─▶ billFromReceipt(receipt)                     (from @splitbill/core)
                                           ├─▶ for each line:
                                           │     toMultiItem(line) → expandItemLine(mi) → 1..N Items
                                           │                                               (per-unit price honored
@@ -174,7 +178,7 @@ ImageInput ──onPick(File)──▶ Home
                                           → Bill { items[], extras, inclusive }
                                                               │
                                                               ├──▶ BillReview UI (with SwipeableRow per item)
-                                                              └──▶ localStorage("splitbill.v1") sync
+                                                              └──▶ localStorage("splitbill.v1") sync   (in apps/web/src/lib/useBillStore.ts)
 ```
 
 ### 2.4 Claude tool-use contract
@@ -215,21 +219,21 @@ Why force a tool: we want machine-parseable JSON regardless of how the model wan
 
 Why these categories: `item` and `discount` map to draggable `Item`s in the UI (after per-unit expansion). `tax | tip | service` accumulate into `bill.extras` and get prorated. `subtotal | total | other` are read (so the model has a category for what it sees) but discarded — they're redundant with the sum and would double-count if surfaced.
 
-Why two new optional fields instead of one: `quantity` alone wouldn't tell us how to derive the per-unit price. By splitting `quantity` and `unitPrice`, the model reports *exactly what's on the receipt* and the app picks the right strategy (honor printed-per-unit vs divide-and-distribute) without rounding drift from the model's arithmetic. See `§1.5` for the user-facing behavior, and `expandItemLine` in `src/lib/store.ts` for the implementation.
+Why two new optional fields instead of one: `quantity` alone wouldn't tell us how to derive the per-unit price. By splitting `quantity` and `unitPrice`, the model reports *exactly what's on the receipt* and the app picks the right strategy (honor printed-per-unit vs divide-and-distribute) without rounding drift from the model's arithmetic. See `§1.5` for the user-facing behavior, and `expandItemLine` in `packages/core/src/store.ts` for the implementation.
 
-Why the three inclusivity-related fields: `taxBehavior` is the textual signal lifted straight off the receipt ("incl. GST" → `inclusive`, "Sales tax" → `exclusive`, else `unknown`). `printedSubtotal` and `printedTotal` let the app cross-check the math when the textual signal is missing — in particular, `Σ items ≈ printedTotal` is the giveaway that *everything* below the items is already in the prices. The app combines all three in `detectInclusive` (`src/lib/store.ts`); see `§1.6` for the user-facing behavior and resolution rules.
+Why the three inclusivity-related fields: `taxBehavior` is the textual signal lifted straight off the receipt ("incl. GST" → `inclusive`, "Sales tax" → `exclusive`, else `unknown`). `printedSubtotal` and `printedTotal` let the app cross-check the math when the textual signal is missing — in particular, `Σ items ≈ printedTotal` is the giveaway that *everything* below the items is already in the prices. The app combines all three in `detectInclusive` (`packages/core/src/store.ts`); see `§1.6` for the user-facing behavior and resolution rules.
 
-Server: `src/lib/parseReceipt.ts`. Route: `src/app/api/extract/route.ts`. Both covered by `src/app/api/extract/route.test.ts` (mocked) and `src/lib/parseReceipt.test.ts` (live, opt-in).
+Server: `packages/core/src/server/parseReceipt.ts`. Route: `apps/web/src/app/api/extract/route.ts`. Both covered by `apps/web/src/app/api/extract/route.test.ts` (mocked) and `packages/core/test/parseReceipt.test.ts` (live, opt-in).
 
 ### 2.5 Component map
 
 ```
-src/app/
+apps/web/src/app/
   layout.tsx              ← html shell, viewport meta, 420 px column
   page.tsx                ← phase machine: idle / loading / error / review
   api/extract/route.ts    ← multipart POST handler
 
-src/components/
+apps/web/src/components/
   ImageInput.tsx          ← start screen
   LoadingScreen.tsx       ← spinner + cancel
   ErrorScreen.tsx         ← retry / pick-different
@@ -237,12 +241,18 @@ src/components/
   SwipeableRow.tsx        ← framer-motion draggable; tap-to-edit
   Totals.tsx              ← sticky footer totals + warning pill
 
-src/lib/
-  types.ts                ← Item, Bill, ExtractedReceipt, Assignee
-  store.ts                ← useReducer + localStorage; nextAssignee helper
+apps/web/src/lib/
+  useBillStore.ts         ← React hook wrapping @splitbill/core reducer with localStorage
+  resizeImageDom.ts       ← canvas wrapper around computeResizeTarget
+
+packages/core/src/        ← @splitbill/core, also consumed by apps/mobile
+  types.ts                ← Item, Bill, ExtractedReceipt, Assignee, InclusiveFlags
+  store.ts                ← reducer + nextAssignee + billFromReceipt + detectInclusive (pure)
   splitter.ts             ← computeTotals + formatMoney
-  resizeImage.ts          ← computeResizeTarget (pure) + canvas wrapper
-  parseReceipt.ts         ← Anthropic tool definition + extractReceipt
+  storage.ts              ← StorageAdapter interface + STORAGE_KEY
+  resizeImage.ts          ← computeResizeTarget (pure)
+  theme.ts                ← design tokens (colors, spacing, type, radii, gradient, shadow)
+  server/parseReceipt.ts  ← Anthropic tool definition + extractReceipt (server-only export)
 ```
 
 ### 2.6 Color tokens
@@ -260,58 +270,11 @@ src/lib/
 | `warn-bg` / `warn-text` | `#FEF3C7` / `#92400E` | "Still unassigned" pill |
 | Gradient | `#F97316 → #EC4899` | Primary button, top stripe, decorative blob |
 
-Tokens are declared as CSS custom properties in `src/app/globals.css` and surfaced to Tailwind v4 via `@theme inline`.
+Tokens are declared as CSS custom properties in `apps/web/src/app/globals.css` and surfaced to Tailwind v4 via `@theme inline`. The same values are mirrored in `packages/core/src/theme.ts` for cross-platform consumption (see [`mobile.md`](./mobile.md) §4).
 
 ---
 
-## 3. Mobile (iOS + Android)
-
-### 3.1 Monorepo layout
-
-The repo is a pnpm workspace with three packages:
-
-```
-apps/web/         ← the Next.js app described above (relocated unchanged)
-apps/mobile/      ← Expo SDK 56 app, expo-router, jsx="react-native"
-packages/core/    ← @splitbill/core — pure domain logic shared by both
-```
-
-`packages/core` exports the type model, the totals math (`computeTotals`, `formatMoney`), the reducer + the helpers around it (`reducer`, `nextAssignee`, `toMultiItem`, `expandItemLine`, `billFromReceipt`, `detectInclusive`), the `StorageAdapter` interface + `STORAGE_KEY`, `computeResizeTarget`, and the `theme` design-token object. None of these touch the DOM, React, or platform APIs.
-
-### 3.2 Shared-core boundary
-
-Two rules hold the boundary:
-
-- `packages/core/tsconfig.json` omits `"dom"` from `lib`, so accidentally referencing `window`, `document`, or `localStorage` from core is a type error.
-- `parseReceipt` (which imports `@anthropic-ai/sdk`) is reachable only from the server-only path `@splitbill/core/server`. Mobile never imports it — when it needs to extract a receipt, it `POST`s the photo to the web app's `/api/extract` route, which keeps the Anthropic key server-side.
-
-The web app composes the core reducer with a `localStorage`-backed adapter in `apps/web/src/lib/useBillStore.ts`. The mobile app does the same with `AsyncStorage` (introduced in M3+).
-
-### 3.3 Theme tokens
-
-`packages/core/src/theme.ts` is the single source of truth for color, spacing, radius, type, gradient, and shadow values. The web app continues to read colors via Tailwind tokens (`apps/web/src/app/globals.css` mirrors the same hex values); mobile imports `theme` directly into `StyleSheet.create`.
-
-The Figma file's Variables collection is a 1:1 mirror of `theme.ts`. When tokens change, both files must move together — code first, then re-run the Figma mirror script.
-
-### 3.4 Figma source of truth
-
-Mobile UI is designed in Figma before any RN screen code lands:
-
-- **File:** `Split the Bill — Mobile` — https://www.figma.com/design/yDOs60DEcPKCIvBEbMPtRD
-- **Variables collection:** `theme` (color/, spacing/, radius/, type/) — mirrors `packages/core/src/theme.ts`.
-- **Frame stubs (M2):** five iPhone-15-sized (393×852) frames — `Start`, `Loading`, `Error`, `Bill Review`, `Inline Edit` — waiting to be designed in M3.
-
-### 3.5 Mobile-specific concerns (deferred to M3+)
-
-- **Photo capture:** `expo-image-picker` + `expo-image-manipulator` (web uses `<input capture>` + a `<canvas>` wrapper).
-- **Gestures:** `react-native-gesture-handler` + `react-native-reanimated` with the existing 70 px threshold + medium haptic on commit.
-- **Persistence:** `@react-native-async-storage/async-storage` behind the same `StorageAdapter` interface as web.
-- **Backend auth:** `/api/extract` is unauthenticated today. A shared-secret header lands before mobile ships externally (M4).
-- **API base URL:** mobile reads `extra.apiBaseUrl` from `apps/mobile/app.config.ts` (defaults to the production Vercel URL; overridable via `EXPO_PUBLIC_API_BASE_URL`).
-
----
-
-## 4. Privacy and security notes
+## 3. Privacy and security notes
 
 - The Anthropic key lives **only** in `ANTHROPIC_API_KEY` on the server. The route handler reads it via `process.env`; it never reaches the client bundle (no `NEXT_PUBLIC_` prefix).
 - Uploaded photos hit `/api/extract`, get base64'd, sent to Anthropic, then go out of scope at the end of the request. There is no persistence on the server side.

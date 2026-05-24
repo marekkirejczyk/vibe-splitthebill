@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Split the Bill
 
-## Getting Started
+A two-person bill splitter: snap a receipt, swipe each line item left for **You** or right for **Them**, and watch the per-person totals settle. Tax, tip, and service prorate across the items pool; receipts that already include tax (Indian GST, EU VAT, etc.) auto-detect and don't double-count.
 
-First, run the development server:
+## What's in this repo
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+It's a pnpm monorepo with three packages:
+
+```
+apps/web/         ← Next.js 16 app — the production web product (deployed on Vercel)
+apps/mobile/      ← Expo SDK 56 app — iOS + Android, in progress (M2 scaffold shipped)
+packages/core/    ← @splitbill/core — pure domain logic shared by both apps
+                    (types, totals math, reducer + helpers, theme tokens, Anthropic SDK wrapper)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The split is enforced by `tsconfig`: `packages/core` doesn't have `dom` in its `lib`, so accidentally touching `window` or `localStorage` from shared code is a type error. The Anthropic SDK call is server-only via `@splitbill/core/server`, so the mobile app cannot accidentally bundle the API key path — mobile always goes through the web's `/api/extract` route.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Documentation
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **[`doc/web.md`](doc/web.md)** — full web spec: UX, swipe state machine, totals math, Claude tool-use contract, component map.
+- **[`doc/mobile.md`](doc/mobile.md)** — mobile spec: monorepo layout, shared-core boundary, Figma source-of-truth, screen-by-screen port, gesture spec, web↔mobile UX deltas, app config.
+- **[`plan.md`](plan.md)** — 8-milestone React Native migration roadmap.
+- **[`plan-m12.md`](plan-m12.md)** — detailed execution plan for M1 (monorepo + core) and M2 (Expo scaffold + theme + Figma kickoff) — both shipped.
+- **[`AGENTS.md`](AGENTS.md)** — test conventions, fixtures, and where to add what.
 
-## Learn More
+## Getting started
 
-To learn more about Next.js, take a look at the following resources:
+Requirements: Node 22, pnpm 10 (`packageManager` pinned to `pnpm@10.33.0`).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+pnpm install                      # resolves workspace deps
+pnpm dev                          # runs the web app on http://localhost:3000
+pnpm test                         # runs all tests across both packages (~1s, offline)
+pnpm lint                         # eslint across both packages
+pnpm build                        # next build for production
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# Mobile
+pnpm --filter @splitbill/mobile start          # Expo Metro
+pnpm --filter @splitbill/mobile ios            # iOS Simulator (needs Xcode)
+pnpm --filter @splitbill/mobile android        # Android emulator (needs Android SDK)
 
-## Deploy on Vercel
+# Live Anthropic integration suite (~$0.01/run, gated)
+ANTHROPIC_API_KEY=sk-ant-... pnpm test:int
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The web app needs `ANTHROPIC_API_KEY` in the environment to extract receipts at runtime. Locally: drop it in `apps/web/.env.local`. On Vercel: project → Settings → Environment Variables.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Deploying
+
+The web app is deployed on Vercel from the `apps/web/` subdirectory. Vercel's project Root Directory setting should point to `apps/web`; the GitHub Actions CI (`.github/workflows/ci.yml`) handles install + lint + test from the repo root and the Vercel build picks up from there.
+
+The mobile app is built via EAS Build (M8 — not yet wired). For now it runs in Expo Go via `pnpm --filter @splitbill/mobile start`.

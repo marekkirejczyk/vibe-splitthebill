@@ -21,11 +21,11 @@ pnpm fixtures      # regenerate tests/fixtures/*.{jpg,png,txt}
 
 | File | Kind | Scope |
 |------|------|-------|
-| `src/lib/splitter.test.ts` | **unit** | `computeTotals` (per-assignee subtotal + proportional extras allocation, divide-by-zero, cent rounding, conservation of money) and `formatMoney`. |
-| `src/lib/store.test.ts` | **unit** | The `nextAssignee` state machine — every (`current`, `direction`) → next-state transition, including the "swipe same direction = unassign" rule. |
-| `src/lib/resizeImage.test.ts` | **unit** | `computeResizeTarget` — the pure dimension/size logic extracted from `resizeImage`. The canvas / `FileReader` / `Image` wrapper is browser-only and verified manually. |
-| `src/app/api/extract/route.test.ts` | **integration (mocked Anthropic)** | `POST /api/extract` end-to-end: 200 happy path, 400 / 413 / 415 / 500 / 502 error paths, and the matrix of supported MIME types. Mocks `@/lib/parseReceipt` so the route logic is the only thing under test. |
-| `src/lib/parseReceipt.test.ts` | **integration (real Anthropic)** | `extractReceipt` against the live API with `tests/fixtures/receipt.jpg` and `tests/fixtures/not-a-receipt.jpg`. **Skipped by default** — gated on `RUN_ANTHROPIC_TESTS=1` and `ANTHROPIC_API_KEY`. Also contains an offline contract test that drives `extractReceipt` with a hand-rolled fake SDK to verify the `tool_choice` argument and the missing-`tool_use` failure path. |
+| `packages/core/test/splitter.test.ts` | **unit** | `computeTotals` (per-assignee subtotal + proportional extras allocation, divide-by-zero, cent rounding, conservation of money) and `formatMoney`. |
+| `packages/core/test/store.test.ts` | **unit** | The `nextAssignee` state machine — every (`current`, `direction`) → next-state transition, including the "swipe same direction = unassign" rule. Also covers `detectInclusive`. |
+| `packages/core/test/resizeImage.test.ts` | **unit** | `computeResizeTarget` — the pure dimension/size logic extracted from `resizeImage`. The canvas / `FileReader` / `Image` wrapper is browser-only and verified manually. |
+| `apps/web/src/app/api/extract/route.test.ts` | **integration (mocked Anthropic)** | `POST /api/extract` end-to-end: 200 happy path, 400 / 413 / 415 / 500 / 502 error paths, and the matrix of supported MIME types. Mocks `@splitbill/core/server` so the route logic is the only thing under test. |
+| `packages/core/test/parseReceipt.test.ts` | **integration (real Anthropic)** | `extractReceipt` against the live API with `tests/fixtures/receipt.jpg` and `tests/fixtures/not-a-receipt.jpg`. **Skipped by default** — gated on `RUN_ANTHROPIC_TESTS=1` and `ANTHROPIC_API_KEY`. Also contains an offline contract test that drives `extractReceipt` with a hand-rolled fake SDK to verify the `tool_choice` argument and the missing-`tool_use` failure path. |
 
 ## Fixtures
 
@@ -47,9 +47,10 @@ If you want to exercise the suite against **real** receipt photos, drop files in
 
 ## Writing new tests
 
-- **New pure helper in `src/lib`** → colocate a `.test.ts` next to it. Default environment is Node, so prefer pure logic; if you need DOM APIs add `// @vitest-environment jsdom` to the top of the file and install `jsdom` first.
-- **New API route** → import its handler directly and call it with `new Request(url, { method, body })`. Don't spin up Next; the route handler is just a function. See `src/app/api/extract/route.test.ts` for the pattern. Stub env vars with `vi.stubEnv` inside `beforeEach`.
-- **New call into Anthropic** → mock `@/lib/parseReceipt` (or whatever wrapper you add) at the test boundary, the way `route.test.ts` does. Reserve real API hits for the live integration file and gate them with `RUN_ANTHROPIC_TESTS`.
+- **New pure helper in `@splitbill/core`** → add it to `packages/core/src/` and colocate a `.test.ts` in `packages/core/test/`. Default environment is Node, so prefer pure logic; if you need DOM APIs add `// @vitest-environment jsdom` to the top of the file and install `jsdom` first.
+- **New web-only helper** → put it in `apps/web/src/lib/` (e.g., the React hook around the core reducer, the canvas wrapper). Web tests follow the same pattern.
+- **New API route** → import its handler directly and call it with `new Request(url, { method, body })`. Don't spin up Next; the route handler is just a function. See `apps/web/src/app/api/extract/route.test.ts` for the pattern. Stub env vars with `vi.stubEnv` inside `beforeEach`.
+- **New call into Anthropic** → mock `@splitbill/core/server` (or whatever wrapper you add) at the test boundary, the way `route.test.ts` does. Reserve real API hits for the live integration file and gate them with `RUN_ANTHROPIC_TESTS`.
 - **Money** → assertions should use `toBeCloseTo(expected, 2)` (or compare against rounded `toBe`). The `computeTotals` output is rounded to cents, so `toBe` is fine on its output; intermediate math is not.
 - **Fixtures** → if you need a new shape of input image, edit `tests/fixtures/generate.mjs` rather than committing a hand-made binary. Re-run `pnpm fixtures` and commit the regenerated files.
 
@@ -64,4 +65,4 @@ That single command spends roughly **$0.01 of API credit per run** (two vision c
 
 # Documentation
 
-Functional and technical spec: [`doc/spec.md`](doc/spec.md). Always update the spec when behavior changes — the swipe semantics, the assignee state machine, the proportional-extras rule, and the model/tool contract for `extractReceipt` are all worth keeping accurate there.
+Web spec: [`doc/web.md`](doc/web.md). Mobile spec: [`doc/mobile.md`](doc/mobile.md). Always update the relevant spec when behaviour changes — the swipe semantics, the assignee state machine, the proportional-extras rule, the model/tool contract for `extractReceipt`, and the shared-core boundary are all worth keeping accurate there. Migration roadmap: [`plan.md`](plan.md); M1+M2 execution detail: [`plan-m12.md`](plan-m12.md).
