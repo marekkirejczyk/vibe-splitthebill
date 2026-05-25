@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { extractReceipt } from "@splitbill/core/server";
 
@@ -12,7 +13,30 @@ const ALLOWED_TYPES = new Set([
   "image/gif",
 ]);
 
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
+// Gate the endpoint once API_SHARED_SECRET is configured server-side. Until
+// then it stays open (local dev + any caller that predates the secret). When
+// active, same-origin browser requests (the web app) are admitted by Origin —
+// so no secret leaks into the public web bundle — and every other caller
+// (the mobile binary, curl) must present a matching x-splitbill-key.
+function isAuthorized(req: Request): boolean {
+  const secret = process.env.API_SHARED_SECRET;
+  if (!secret) return true;
+  const allowedOrigin = process.env.NEXT_PUBLIC_SITE_ORIGIN;
+  if (allowedOrigin && req.headers.get("origin") === allowedOrigin) return true;
+  const key = req.headers.get("x-splitbill-key") ?? "";
+  return safeEqual(key, secret);
+}
+
 export async function POST(req: Request) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return NextResponse.json(

@@ -42,10 +42,20 @@ async function fixtureFile(
   return new File([buf], name, { type: overrideType ?? mime });
 }
 
-function postWithForm(form: FormData) {
+function postWithForm(form: FormData, headers?: Record<string, string>) {
   return POST(
-    new Request("http://localhost/api/extract", { method: "POST", body: form })
+    new Request("http://localhost/api/extract", {
+      method: "POST",
+      body: form,
+      headers,
+    })
   );
+}
+
+async function validImageForm(): Promise<FormData> {
+  const form = new FormData();
+  form.append("image", await fixtureFile("tiny.png", "image/png"));
+  return form;
 }
 
 describe("POST /api/extract", () => {
@@ -163,6 +173,63 @@ describe("POST /api/extract", () => {
     expect(res.status).toBe(502);
     const body = await res.json();
     expect(body.error).toMatch(/overloaded|529/);
+  });
+
+  describe("shared-secret auth gate", () => {
+    test("gate disabled (no API_SHARED_SECRET): header-less request still 200", async () => {
+      vi.stubEnv("API_SHARED_SECRET", "");
+      extractReceiptMock.mockResolvedValueOnce({ currency: "$", lines: [] });
+      const res = await postWithForm(await validImageForm());
+      expect(res.status).toBe(200);
+    });
+
+    test("secret set, no header and no matching origin → 401, Anthropic not called", async () => {
+      vi.stubEnv("API_SHARED_SECRET", "s3cret-value");
+      const res = await postWithForm(await validImageForm());
+      expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.error).toBe("Unauthorized");
+      expect(extractReceiptMock).not.toHaveBeenCalled();
+    });
+
+    test("secret set, wrong header → 401", async () => {
+      vi.stubEnv("API_SHARED_SECRET", "s3cret-value");
+      const res = await postWithForm(await validImageForm(), {
+        "x-splitbill-key": "wrong",
+      });
+      expect(res.status).toBe(401);
+      expect(extractReceiptMock).not.toHaveBeenCalled();
+    });
+
+    test("secret set, correct x-splitbill-key → 200", async () => {
+      vi.stubEnv("API_SHARED_SECRET", "s3cret-value");
+      extractReceiptMock.mockResolvedValueOnce({ currency: "$", lines: [] });
+      const res = await postWithForm(await validImageForm(), {
+        "x-splitbill-key": "s3cret-value",
+      });
+      expect(res.status).toBe(200);
+      expect(extractReceiptMock).toHaveBeenCalledTimes(1);
+    });
+
+    test("secret set, matching Origin (browser) without key → 200", async () => {
+      vi.stubEnv("API_SHARED_SECRET", "s3cret-value");
+      vi.stubEnv("NEXT_PUBLIC_SITE_ORIGIN", "https://app.example");
+      extractReceiptMock.mockResolvedValueOnce({ currency: "$", lines: [] });
+      const res = await postWithForm(await validImageForm(), {
+        origin: "https://app.example",
+      });
+      expect(res.status).toBe(200);
+    });
+
+    test("secret set, mismatched Origin without key → 401", async () => {
+      vi.stubEnv("API_SHARED_SECRET", "s3cret-value");
+      vi.stubEnv("NEXT_PUBLIC_SITE_ORIGIN", "https://app.example");
+      const res = await postWithForm(await validImageForm(), {
+        origin: "https://evil.example",
+      });
+      expect(res.status).toBe(401);
+      expect(extractReceiptMock).not.toHaveBeenCalled();
+    });
   });
 
   test("accepts all four supported image types", async () => {

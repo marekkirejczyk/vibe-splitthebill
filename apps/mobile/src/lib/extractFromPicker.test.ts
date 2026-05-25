@@ -3,6 +3,7 @@ import {
   MAX_EDGE,
   type ExtractedReceipt,
 } from "@splitbill/core";
+import Constants from "expo-constants";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import {
@@ -153,6 +154,39 @@ test("happy path: large image → resize + JPEG re-encode + 200 receipt", async 
   expect(url).toBe("https://example.test/api/extract");
   expect(init.method).toBe("POST");
   expect(init.body).toBeInstanceOf(FormData);
+  // No secret configured in the base mock → no auth header.
+  expect(init.headers).toBeUndefined();
+});
+
+test("sends x-splitbill-key header when extra.apiSecret is configured", async () => {
+  const extra = (Constants as unknown as {
+    expoConfig: { extra: { apiSecret?: string } };
+  }).expoConfig.extra;
+  extra.apiSecret = "build-secret";
+  try {
+    mockedPicker.requestCameraPermissionsAsync.mockResolvedValueOnce({
+      granted: true,
+    } as unknown as ImagePicker.CameraPermissionResponse);
+    mockedPicker.launchCameraAsync.mockResolvedValueOnce({
+      canceled: false,
+      assets: [
+        { uri: "file:///tmp/x.jpg", width: 100, height: 100, fileSize: 1000 },
+      ],
+    } as unknown as ImagePicker.ImagePickerResult);
+    mockedManipulator.manipulateAsync.mockResolvedValueOnce({
+      uri: "file:///tmp/out.jpg",
+      width: 100,
+      height: 100,
+    } as ImageManipulator.ImageResult);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, makeReceipt()));
+
+    await extractFromPicker("camera");
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.headers).toEqual({ "x-splitbill-key": "build-secret" });
+  } finally {
+    delete extra.apiSecret;
+  }
 });
 
 test("small image → no resize, still force-JPEG (actions: [])", async () => {

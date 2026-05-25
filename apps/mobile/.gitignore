@@ -4,3 +4,11 @@ web-dist/
 e2e/artifacts/
 playwright-report/
 *.log
+
+# EAS / store signing credentials — never commit
+play-service-account.json
+*.p8
+*.p12
+*.mobileprovision
+*.keystore
+*.jks
