@@ -11,12 +11,15 @@ import {
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
+  FadeIn,
+  FadeOut,
+  LinearTransition,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
-import { swipeDescriptor } from "./swipeDescriptor";
+import { rowAccessibilityActions, swipeDescriptor } from "./swipeDescriptor";
 
 const THRESHOLD = 70;
 const CLAMP = 160;
@@ -112,6 +115,10 @@ export function SwipeableRow({
     () => swipeDescriptor(item.assignee, "right"),
     [item.assignee],
   );
+  const a11y = useMemo(
+    () => rowAccessibilityActions(item.assignee),
+    [item.assignee],
+  );
 
   const rowStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: tx.value }],
@@ -126,7 +133,13 @@ export function SwipeableRow({
   const assigned = item.assignee !== null;
 
   return (
-    <View style={styles.wrap} testID={testID}>
+    <Animated.View
+      style={styles.wrap}
+      testID={testID}
+      layout={LinearTransition.springify().damping(18)}
+      entering={FadeIn.duration(180)}
+      exiting={FadeOut.duration(120)}
+    >
       <Animated.View
         style={[
           styles.underlay,
@@ -154,6 +167,14 @@ export function SwipeableRow({
         <Animated.View
           accessibilityRole="button"
           accessibilityLabel={`${item.name}, ${formatMoney(item.price, currency)}, ${item.assignee ?? "unassigned"}`}
+          accessibilityActions={a11y.actions}
+          onAccessibilityAction={(e) => {
+            const dir = a11y.directionFor[e.nativeEvent.actionName];
+            if (dir) {
+              onSwipe(dir);
+              fireHaptic();
+            }
+          }}
           style={[
             styles.row,
             assigned ? styles.assignedRow : styles.unassignedRow,
@@ -211,7 +232,7 @@ export function SwipeableRow({
           )}
         </Animated.View>
       </GestureDetector>
-    </View>
+    </Animated.View>
   );
 }
 
