@@ -17,6 +17,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { Chip } from "./Chip";
 import { InclusiveToggleRow } from "./InclusiveToggleRow";
 import { SecondaryButton } from "./SecondaryButton";
@@ -106,7 +107,7 @@ export function BillReview({ bill, dispatch, onReset }: Props) {
         ) : null}
 
         {unassigned.length > 0 ? (
-          <View style={styles.section} testID="section-unassigned">
+          <Animated.View style={styles.section} testID="section-unassigned" entering={FadeIn} exiting={FadeOut}>
             <Chip
               label="Unassigned"
               count={unassigned.length}
@@ -126,11 +127,11 @@ export function BillReview({ bill, dispatch, onReset }: Props) {
                 />
               ))}
             </View>
-          </View>
+          </Animated.View>
         ) : null}
 
         {you.length > 0 ? (
-          <View style={styles.section} testID="section-you">
+          <Animated.View style={styles.section} testID="section-you" entering={FadeIn} exiting={FadeOut}>
             <Chip
               label="You"
               count={you.length}
@@ -150,11 +151,11 @@ export function BillReview({ bill, dispatch, onReset }: Props) {
                 />
               ))}
             </View>
-          </View>
+          </Animated.View>
         ) : null}
 
         {them.length > 0 ? (
-          <View style={styles.section} testID="section-them">
+          <Animated.View style={styles.section} testID="section-them" entering={FadeIn} exiting={FadeOut}>
             <Chip
               label="Them"
               count={them.length}
@@ -174,7 +175,7 @@ export function BillReview({ bill, dispatch, onReset }: Props) {
                 />
               ))}
             </View>
-          </View>
+          </Animated.View>
         ) : null}
       </ScrollView>
       </KeyboardAvoidingView>

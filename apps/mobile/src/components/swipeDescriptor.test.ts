@@ -1,5 +1,5 @@
 import { theme } from "@splitbill/core";
-import { swipeDescriptor } from "./swipeDescriptor";
+import { rowAccessibilityActions, swipeDescriptor } from "./swipeDescriptor";
 
 // Six cells of the nextAssignee state machine, exhaustively. The descriptor
 // must stay bit-identical with the SWIPE reducer in @splitbill/core (web
@@ -52,4 +52,44 @@ test("them + right → null (unassign warn)", () => {
     color: theme.color.warn,
     target: null,
   });
+});
+
+// rowAccessibilityActions — the VoiceOver/TalkBack equivalents. Derived from
+// nextAssignee (via swipeDescriptor), so these assertions double as a guard
+// that the spoken actions can't drift from the gesture.
+
+test("unassigned row → assign-to-You (left) + assign-to-Them (right)", () => {
+  const { actions, directionFor } = rowAccessibilityActions(null);
+  expect(actions).toEqual([
+    { name: "you", label: "Assign to You" },
+    { name: "them", label: "Assign to Them" },
+  ]);
+  expect(directionFor).toEqual({ you: "left", them: "right" });
+});
+
+test("you row → unassign (left) + assign-to-Them (right)", () => {
+  const { actions, directionFor } = rowAccessibilityActions("you");
+  expect(actions).toEqual([
+    { name: "unassign", label: "Unassign" },
+    { name: "them", label: "Assign to Them" },
+  ]);
+  expect(directionFor).toEqual({ unassign: "left", them: "right" });
+});
+
+test("them row → assign-to-You (left) + unassign (right)", () => {
+  const { actions, directionFor } = rowAccessibilityActions("them");
+  expect(actions).toEqual([
+    { name: "you", label: "Assign to You" },
+    { name: "unassign", label: "Unassign" },
+  ]);
+  expect(directionFor).toEqual({ you: "left", unassign: "right" });
+});
+
+test("action names are unique and match the directionFor keys", () => {
+  for (const current of [null, "you", "them"] as const) {
+    const { actions, directionFor } = rowAccessibilityActions(current);
+    const names = actions.map((a) => a.name);
+    expect(new Set(names).size).toBe(names.length);
+    expect(Object.keys(directionFor).sort()).toEqual([...names].sort());
+  }
 });

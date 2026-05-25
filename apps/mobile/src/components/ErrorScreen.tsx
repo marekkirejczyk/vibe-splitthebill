@@ -34,9 +34,11 @@ export function ErrorScreen({ message, onRetry, onStartOver }: Props) {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.color.bg },
   content: {
+    // SafeAreaView already insets the top edge; keep this pad modest so the
+    // two don't stack into an oversized gap on notched / Dynamic Island devices.
     flex: 1,
     paddingHorizontal: theme.spacing.xxl,
-    paddingTop: theme.spacing.xxxl,
+    paddingTop: theme.spacing.xl,
     paddingBottom: theme.spacing.xxl,
     alignItems: "center",
   },

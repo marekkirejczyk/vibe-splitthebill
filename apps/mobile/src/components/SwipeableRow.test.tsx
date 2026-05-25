@@ -148,6 +148,49 @@ test("them-state swipe right commits 'right' (→ unassigned)", () => {
   expect(onSwipe).toHaveBeenCalledWith("right");
 });
 
+// --- M7 accessibility actions (VoiceOver / TalkBack swipe equivalents) ---
+
+test("accessibilityActions track the assignee", () => {
+  const { rerender } = render(
+    <SwipeableRow item={item()} currency="$" onSwipe={() => {}} testID="row" />,
+  );
+  let row = screen.getByLabelText(/Margherita pizza/);
+  expect(
+    (row.props.accessibilityActions as { name: string }[]).map((a) => a.name),
+  ).toEqual(["you", "them"]);
+
+  rerender(
+    <SwipeableRow
+      item={item({ assignee: "you" })}
+      currency="$"
+      onSwipe={() => {}}
+      testID="row"
+    />,
+  );
+  row = screen.getByLabelText(/Margherita pizza/);
+  expect(
+    (row.props.accessibilityActions as { name: string }[]).map((a) => a.name),
+  ).toEqual(["unassign", "them"]);
+});
+
+test("firing an accessibility action dispatches onSwipe with the mapped direction + haptic", () => {
+  const onSwipe = jest.fn();
+  render(
+    <SwipeableRow
+      item={item({ assignee: "you" })}
+      currency="$"
+      onSwipe={onSwipe}
+      testID="row"
+    />,
+  );
+  const row = screen.getByLabelText(/Margherita pizza/);
+  fireEvent(row, "accessibilityAction", {
+    nativeEvent: { actionName: "them" },
+  });
+  expect(onSwipe).toHaveBeenCalledWith("right"); // you + "them" → swipe right
+  expect(Haptics.impactAsync).toHaveBeenCalledWith("medium");
+});
+
 // --- M6 inline edit ---
 
 test("tapping the name opens a TextInput pre-filled with the current name", () => {
