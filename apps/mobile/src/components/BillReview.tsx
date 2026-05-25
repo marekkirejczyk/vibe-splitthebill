@@ -7,7 +7,15 @@ import {
 } from "@splitbill/core";
 import type { Dispatch } from "react";
 import { useMemo } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Chip } from "./Chip";
 import { InclusiveToggleRow } from "./InclusiveToggleRow";
@@ -42,19 +50,38 @@ export function BillReview({ bill, dispatch, onReset }: Props) {
   const togglesVisible =
     bill.extras.tax > 0 || bill.extras.tip > 0 || bill.extras.service > 0;
 
+  // Confirm before clearing only if work would be lost — a fresh, untouched
+  // bill resets immediately (no thumb-fumble guard needed).
+  function handleReset() {
+    const hasAssignment = bill.items.some((it) => it.assignee !== null);
+    if (!hasAssignment) {
+      onReset();
+      return;
+    }
+    Alert.alert("Start over?", "This clears your bill.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Start over", style: "destructive", onPress: onReset },
+    ]);
+  }
+
   return (
     <SafeAreaView style={styles.root} edges={["top", "left", "right"]}>
       <View style={styles.topBar}>
         <Text style={styles.title}>Split the bill</Text>
-        <SecondaryButton label="↻ New bill" small onPress={onReset} testID="bill-reset" />
+        <SecondaryButton label="↻ New bill" small onPress={handleReset} testID="bill-reset" />
       </View>
 
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
           { paddingBottom: FOOTER_RESERVE + insets.bottom },
         ]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         {togglesVisible ? (
           <View style={styles.togglesSection}>
@@ -93,6 +120,8 @@ export function BillReview({ bill, dispatch, onReset }: Props) {
                   item={item}
                   currency={bill.currency}
                   onSwipe={(direction) => dispatch({ type: "SWIPE", id: item.id, direction })}
+                  onEditName={(name) => dispatch({ type: "EDIT_NAME", id: item.id, name })}
+                  onEditPrice={(price) => dispatch({ type: "EDIT_PRICE", id: item.id, price })}
                   testID={`row-${item.id}`}
                 />
               ))}
@@ -115,6 +144,8 @@ export function BillReview({ bill, dispatch, onReset }: Props) {
                   item={item}
                   currency={bill.currency}
                   onSwipe={(direction) => dispatch({ type: "SWIPE", id: item.id, direction })}
+                  onEditName={(name) => dispatch({ type: "EDIT_NAME", id: item.id, name })}
+                  onEditPrice={(price) => dispatch({ type: "EDIT_PRICE", id: item.id, price })}
                   testID={`row-${item.id}`}
                 />
               ))}
@@ -137,6 +168,8 @@ export function BillReview({ bill, dispatch, onReset }: Props) {
                   item={item}
                   currency={bill.currency}
                   onSwipe={(direction) => dispatch({ type: "SWIPE", id: item.id, direction })}
+                  onEditName={(name) => dispatch({ type: "EDIT_NAME", id: item.id, name })}
+                  onEditPrice={(price) => dispatch({ type: "EDIT_PRICE", id: item.id, price })}
                   testID={`row-${item.id}`}
                 />
               ))}
@@ -144,6 +177,7 @@ export function BillReview({ bill, dispatch, onReset }: Props) {
           </View>
         ) : null}
       </ScrollView>
+      </KeyboardAvoidingView>
 
       <Totals totals={totals} currency={bill.currency} />
     </SafeAreaView>
@@ -152,6 +186,7 @@ export function BillReview({ bill, dispatch, onReset }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.color.bg },
+  flex: { flex: 1 },
   topBar: {
     flexDirection: "row",
     alignItems: "center",

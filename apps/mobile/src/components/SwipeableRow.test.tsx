@@ -1,5 +1,5 @@
 import type { Item } from "@splitbill/core";
-import { render, screen } from "@testing-library/react-native";
+import { fireEvent, render, screen } from "@testing-library/react-native";
 import * as Haptics from "expo-haptics";
 import { State } from "react-native-gesture-handler";
 import {
@@ -146,4 +146,98 @@ test("them-state swipe right commits 'right' (→ unassigned)", () => {
     { state: State.END, translationX: 100 },
   ]);
   expect(onSwipe).toHaveBeenCalledWith("right");
+});
+
+// --- M6 inline edit ---
+
+test("tapping the name opens a TextInput pre-filled with the current name", () => {
+  render(
+    <SwipeableRow item={item()} currency="$" onSwipe={() => {}} testID="row" />,
+  );
+  fireEvent.press(screen.getByTestId("row-name-edit"));
+  const input = screen.getByTestId("row-name-input");
+  expect(input.props.value).toBe("Margherita pizza");
+});
+
+test("editing the name then blurring commits via onEditName", () => {
+  const onEditName = jest.fn();
+  render(
+    <SwipeableRow
+      item={item()}
+      currency="$"
+      onSwipe={() => {}}
+      onEditName={onEditName}
+      testID="row"
+    />,
+  );
+  fireEvent.press(screen.getByTestId("row-name-edit"));
+  const input = screen.getByTestId("row-name-input");
+  fireEvent.changeText(input, "Margherita Reale");
+  fireEvent(input, "blur");
+  expect(onEditName).toHaveBeenCalledWith("Margherita Reale");
+});
+
+test("blurring an empty name discards (no onEditName)", () => {
+  const onEditName = jest.fn();
+  render(
+    <SwipeableRow
+      item={item()}
+      currency="$"
+      onSwipe={() => {}}
+      onEditName={onEditName}
+      testID="row"
+    />,
+  );
+  fireEvent.press(screen.getByTestId("row-name-edit"));
+  const input = screen.getByTestId("row-name-input");
+  fireEvent.changeText(input, "   ");
+  fireEvent(input, "blur");
+  expect(onEditName).not.toHaveBeenCalled();
+  expect(screen.getByText("Margherita pizza")).toBeTruthy();
+});
+
+test("tapping the price opens a decimal-pad TextInput pre-filled with toFixed(2)", () => {
+  render(
+    <SwipeableRow item={item()} currency="$" onSwipe={() => {}} testID="row" />,
+  );
+  fireEvent.press(screen.getByTestId("row-price-edit"));
+  const input = screen.getByTestId("row-price-input");
+  expect(input.props.value).toBe("14.00");
+  expect(input.props.keyboardType).toBe("decimal-pad");
+});
+
+test("committing a comma-decimal price parses to a number", () => {
+  const onEditPrice = jest.fn();
+  render(
+    <SwipeableRow
+      item={item()}
+      currency="$"
+      onSwipe={() => {}}
+      onEditPrice={onEditPrice}
+      testID="row"
+    />,
+  );
+  fireEvent.press(screen.getByTestId("row-price-edit"));
+  const input = screen.getByTestId("row-price-input");
+  fireEvent.changeText(input, "14,5");
+  fireEvent(input, "blur");
+  expect(onEditPrice).toHaveBeenCalledWith(14.5);
+});
+
+test("committing an invalid price does not dispatch", () => {
+  const onEditPrice = jest.fn();
+  render(
+    <SwipeableRow
+      item={item()}
+      currency="$"
+      onSwipe={() => {}}
+      onEditPrice={onEditPrice}
+      testID="row"
+    />,
+  );
+  fireEvent.press(screen.getByTestId("row-price-edit"));
+  const input = screen.getByTestId("row-price-input");
+  fireEvent.changeText(input, "abc");
+  fireEvent(input, "blur");
+  expect(onEditPrice).not.toHaveBeenCalled();
 });
