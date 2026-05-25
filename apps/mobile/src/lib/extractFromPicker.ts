@@ -6,6 +6,7 @@ import {
   type ExtractedReceipt,
 } from "@splitbill/core";
 import { apiBaseUrl } from "./apiBaseUrl";
+import { apiSecret } from "./apiSecret";
 
 export type PickerSource = "camera" | "library";
 
@@ -81,12 +82,14 @@ export async function extractFromPicker(
     type: "image/jpeg",
   } as unknown as Blob);
 
+  const secret = apiSecret();
   let res: Response;
   try {
     res = await fetch(`${apiBaseUrl()}/api/extract`, {
       method: "POST",
       body: form,
       signal: options.signal,
+      headers: secret ? { "x-splitbill-key": secret } : undefined,
     });
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") throw err;
