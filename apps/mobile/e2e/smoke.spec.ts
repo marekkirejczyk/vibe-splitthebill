@@ -90,3 +90,58 @@ test("phase machine: start → load → bill → swipe → toggle → reset", as
   await expect(page.getByTestId("start-take-photo")).toBeVisible();
   await shot("07-back-to-start");
 });
+
+// M5-specific: the swipe underlay reveal + the 70 px commit threshold. The
+// phase-machine test above only does full past-threshold swipes; this one
+// holds a sub-threshold drag (to screenshot the "Them ←" underlay) and
+// proves a below-threshold release does NOT commit, then contrasts with a
+// full swipe that does. Complements the jest threshold unit test with
+// visual + integration evidence on the real gesture-handler-web pipeline.
+test("M5 swipe: underlay reveal + 70px threshold (sub-threshold cancels)", async ({ page }, testInfo) => {
+  const shot = async (name: string) => {
+    const file = testInfo.outputPath(`${name}.png`);
+    await page.screenshot({ path: file, fullPage: false });
+    await testInfo.attach(name, { path: file, contentType: "image/png" });
+  };
+
+  await page.goto("/");
+  await page.getByTestId("start-take-photo").click();
+  await expect(page.getByTestId("section-unassigned")).toBeVisible({ timeout: 5_000 });
+
+  const row = page
+    .getByTestId("section-unassigned")
+    .locator('[data-testid^="row-"]')
+    .first();
+  const rowId = await row.getAttribute("data-testid");
+  const box = await row.boundingBox();
+  if (!box) throw new Error("row has no bounding box");
+  const startX = box.x + box.width / 2;
+  const startY = box.y + box.height / 2;
+
+  // Drag RIGHT ~60 px and HOLD — below the 70 px commit threshold. The
+  // left-positioned underlay (rightDir = nextAssignee(null,"right") = them)
+  // fades in showing "Them ←".
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 30, startY, { steps: 5 });
+  await page.mouse.move(startX + 60, startY, { steps: 5 });
+  // Scope to the dragged row — every row renders its own underlays.
+  await expect(row.getByText("Them ←")).toBeVisible();
+  await shot("08-underlay-revealed");
+
+  // Release below threshold → spring back, NO commit.
+  await page.mouse.up();
+  await expect(
+    page.getByTestId("section-unassigned").locator(`[data-testid="${rowId}"]`),
+  ).toBeVisible();
+  await expect(page.getByTestId("section-you")).toHaveCount(0);
+  await expect(page.getByTestId("section-them")).toHaveCount(0);
+  await shot("09-below-threshold-no-commit");
+
+  // Now a full past-threshold swipe right DOES commit → Them section.
+  await swipeRow(page, row, "right");
+  await expect(
+    page.getByTestId("section-them").locator(`[data-testid="${rowId}"]`),
+  ).toBeVisible();
+  await shot("10-past-threshold-commit");
+});

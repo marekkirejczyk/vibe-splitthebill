@@ -33,6 +33,42 @@ test("renders item name and money-formatted price", () => {
   expect(screen.getByText("$14.00")).toBeTruthy();
 });
 
+test("unassigned row renders both swipe underlays: '→ You' (left) and 'Them ←' (right)", () => {
+  // Both underlays are always in the tree (opacity is animated 0→1 as you
+  // drag). left + right of an unassigned row resolve via nextAssignee.
+  render(
+    <SwipeableRow item={item()} currency="$" onSwipe={() => {}} testID="row" />,
+  );
+  expect(screen.getByText("→ You")).toBeTruthy(); // null + left  → you
+  expect(screen.getByText("Them ←")).toBeTruthy(); // null + right → them
+});
+
+test("you-assigned row renders 'Unassign' + 'Them ←' underlays", () => {
+  render(
+    <SwipeableRow
+      item={item({ assignee: "you" })}
+      currency="$"
+      onSwipe={() => {}}
+      testID="row"
+    />,
+  );
+  expect(screen.getByText("Unassign")).toBeTruthy(); // you + left  → null
+  expect(screen.getByText("Them ←")).toBeTruthy(); // you + right → them
+});
+
+test("them-assigned row renders '→ You' + 'Unassign' underlays", () => {
+  render(
+    <SwipeableRow
+      item={item({ assignee: "them" })}
+      currency="$"
+      onSwipe={() => {}}
+      testID="row"
+    />,
+  );
+  expect(screen.getByText("→ You")).toBeTruthy(); // them + left  → you
+  expect(screen.getByText("Unassign")).toBeTruthy(); // them + right → null
+});
+
 test("swipe past threshold (-80 px) commits 'left' and fires medium haptic", () => {
   const onSwipe = jest.fn();
   render(
