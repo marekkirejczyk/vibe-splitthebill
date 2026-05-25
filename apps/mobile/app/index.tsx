@@ -1,5 +1,6 @@
 import * as Haptics from "expo-haptics";
-import { useRef, useState } from "react";
+import * as SplashScreen from "expo-splash-screen";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Linking, Platform } from "react-native";
 import { BillReview } from "../src/components/BillReview";
 import { ErrorScreen } from "../src/components/ErrorScreen";
@@ -20,9 +21,14 @@ type Phase =
   | { kind: "error"; message: string };
 
 export default function Index() {
-  const [state, dispatch] = useBillStore();
+  const [state, dispatch, hydrated] = useBillStore();
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const abortRef = useRef<AbortController | null>(null);
+
+  // Reveal the app once the persisted bill (if any) has loaded.
+  useEffect(() => {
+    if (hydrated) void SplashScreen.hideAsync().catch(() => {});
+  }, [hydrated]);
 
   async function loadReceipt(source: PickerSource) {
     const ctrl = new AbortController();
@@ -91,6 +97,9 @@ export default function Index() {
       ],
     );
   }
+
+  // Splash stays up until this returns real UI.
+  if (!hydrated) return null;
 
   if (phase.kind === "loading") {
     return <LoadingScreen onCancel={requestCancel} />;

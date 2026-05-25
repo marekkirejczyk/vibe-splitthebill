@@ -172,9 +172,11 @@ Each app supplies its own adapter:
 | App | Adapter | Survives |
 |---|---|---|
 | Web | `localStorage` wrapper in `apps/web/src/lib/useBillStore.ts` | Page reload; cleared by "Clear site data". |
-| Mobile | `AsyncStorage` wrapper (M6) | App kill + restart; cleared by uninstall. |
+| Mobile | `asyncStorageAdapter` in `apps/mobile/src/lib/asyncStorageAdapter.ts`, wired through `apps/mobile/src/hooks/useBillStore.ts` | App kill + restart; cleared by uninstall. |
 
 The `REHYDRATE` reducer action and the legacy `taxIncluded` → `inclusive` migration in `packages/core/src/store.ts` work unchanged — `AsyncStorage` serializes the same JSON shape.
+
+The mobile `useBillStore` returns `[state, dispatch, hydrated]`. The host (`app/index.tsx`) returns `null` until `hydrated` is true, and `expo-splash-screen` holds the native splash across the rehydration round-trip (`preventAutoHideAsync()` at the top of `app/_layout.tsx`, `hideAsync()` once `hydrated` flips) so there's no black flash on cold start. State is written on every dispatch, but only after hydration completes — so the first render never clobbers a persisted bill with `initialState`.
 
 ## 10. Web vs mobile deltas
 
@@ -233,8 +235,8 @@ The whole 8-milestone plan lives in [`../plan.md`](../plan.md); execution detail
 | **M3** | Static screens against a mock bill — no gestures yet (tap-to-cycle) | ✅ shipped |
 | **M4** | Real `expo-image-picker` + `expo-image-manipulator` + `fetch` to `/api/extract`, `Alert.alert` cancel + permission flows, success haptic | ✅ shipped |
 | **M5** | `SwipeableRow` gestures: `Gesture.Pan` + Reanimated translateX + two stacked underlay layers + medium haptic on commit. Tap-to-cycle removed | ✅ shipped |
-| **M6** | Inline edit, `KeyboardAvoidingView`, `AsyncStorage` adapter, "New bill" Alert | next |
-| **M7** | Polish: safe areas, splash screen, app icon, **`accessibilityActions` for VoiceOver / TalkBack swipe equivalents (M5 follow-up)**, section animations | |
+| **M6** | Inline edit (`TextInput` swap-in + `KeyboardAvoidingView`), `AsyncStorage` persistence, "New bill" confirm Alert, `expo-splash-screen` masking cold-start rehydration | ✅ shipped |
+| **M7** | Polish: safe areas, app icon + designed splash visual, **`accessibilityActions` for VoiceOver / TalkBack swipe equivalents (M5 follow-up)**, `Layout.springify()` section animations | next |
 | **M8** | EAS Build preview, TestFlight internal, Android internal track, physical-device smoke + shared-secret auth on `/api/extract` | |
 
 ## 13. Risks and open questions

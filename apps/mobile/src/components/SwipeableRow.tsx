@@ -1,7 +1,14 @@
 import { formatMoney, theme, type Item } from "@splitbill/core";
 import * as Haptics from "expo-haptics";
-import { useMemo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  BackHandler,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   runOnJS,
@@ -19,11 +26,12 @@ type Props = {
   item: Item;
   currency: string;
   onSwipe: (direction: "left" | "right") => void;
-  // M6 wires these to TextInput swap-in on tap-of-name / tap-of-price.
   onEditName?: (name: string) => void;
   onEditPrice?: (price: number) => void;
   testID?: string;
 };
+
+type Editing = "name" | "price" | null;
 
 function clampWorklet(value: number, min: number, max: number) {
   "worklet";
@@ -34,21 +42,22 @@ function fireHaptic() {
   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
 }
 
-export function SwipeableRow({ item, currency, onSwipe, testID }: Props) {
+export function SwipeableRow({
+  item,
+  currency,
+  onSwipe,
+  onEditName,
+  onEditPrice,
+  testID,
+}: Props) {
   const tx = useSharedValue(0);
+  const [editing, setEditing] = useState<Editing>(null);
+  const [draft, setDraft] = useState("");
 
-  // Pre-compute both underlay descriptors outside the worklet — they only
-  // depend on item.assignee, and the worklet shouldn't snapshot React props.
-  const leftDir = useMemo(
-    () => swipeDescriptor(item.assignee, "left"),
-    [item.assignee],
-  );
-  const rightDir = useMemo(
-    () => swipeDescriptor(item.assignee, "right"),
-    [item.assignee],
-  );
-
+  // Disable the pan while a TextInput is focused so the keyboard isn't
+  // fighting the gesture and an accidental drag doesn't reassign the row.
   const pan = Gesture.Pan()
+    .enabled(editing === null)
     .activeOffsetX([-10, 10])
     .failOffsetY([-12, 12])
     .withTestId(`${testID ?? "row"}-pan`)
@@ -64,13 +73,49 @@ export function SwipeableRow({ item, currency, onSwipe, testID }: Props) {
       tx.value = withSpring(0, SPRING);
     });
 
+  // Android hardware back closes an open edit (no commit) + dismisses keyboard.
+  useEffect(() => {
+    if (editing === null) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      setEditing(null);
+      return true;
+    });
+    return () => sub.remove();
+  }, [editing]);
+
+  function startEditName() {
+    setDraft(item.name);
+    setEditing("name");
+  }
+  function startEditPrice() {
+    setDraft(item.price.toFixed(2));
+    setEditing("price");
+  }
+  function commitName() {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== item.name) onEditName?.(trimmed);
+    setEditing(null);
+  }
+  function commitPrice() {
+    const parsed = parseFloat(draft.replace(",", "."));
+    if (Number.isFinite(parsed) && parsed >= 0 && parsed !== item.price) {
+      onEditPrice?.(Math.round(parsed * 100) / 100);
+    }
+    setEditing(null);
+  }
+
+  const leftDir = useMemo(
+    () => swipeDescriptor(item.assignee, "left"),
+    [item.assignee],
+  );
+  const rightDir = useMemo(
+    () => swipeDescriptor(item.assignee, "right"),
+    [item.assignee],
+  );
+
   const rowStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: tx.value }],
   }));
-
-  // Left-aligned underlay shows when dragging RIGHT (tx > 0) — describes
-  // what a right-commit would do. Right-aligned underlay shows when
-  // dragging LEFT (tx < 0). Opacity ramps 0 → 1 over [0, THRESHOLD].
   const leftLabelStyle = useAnimatedStyle(() => ({
     opacity: tx.value > 0 ? Math.min(tx.value / THRESHOLD, 1) : 0,
   }));
@@ -115,11 +160,55 @@ export function SwipeableRow({ item, currency, onSwipe, testID }: Props) {
             rowStyle,
           ]}
         >
-          <Text style={styles.name} numberOfLines={1}>
-            {item.name}
-          </Text>
+          {editing === "name" ? (
+            <TextInput
+              value={draft}
+              onChangeText={setDraft}
+              onBlur={commitName}
+              onSubmitEditing={commitName}
+              autoFocus
+              selectTextOnFocus
+              blurOnSubmit
+              returnKeyType="done"
+              style={styles.nameInput}
+              testID={`${testID ?? "row"}-name-input`}
+            />
+          ) : (
+            <Pressable
+              onPress={startEditName}
+              style={styles.namePress}
+              testID={`${testID ?? "row"}-name-edit`}
+            >
+              <Text style={styles.name} numberOfLines={1}>
+                {item.name}
+              </Text>
+            </Pressable>
+          )}
+
           <View style={styles.spacer} />
-          <Text style={styles.price}>{formatMoney(item.price, currency)}</Text>
+
+          {editing === "price" ? (
+            <TextInput
+              value={draft}
+              onChangeText={setDraft}
+              onBlur={commitPrice}
+              onSubmitEditing={commitPrice}
+              autoFocus
+              selectTextOnFocus
+              blurOnSubmit
+              keyboardType="decimal-pad"
+              returnKeyType="done"
+              style={styles.priceInput}
+              testID={`${testID ?? "row"}-price-input`}
+            />
+          ) : (
+            <Pressable
+              onPress={startEditPrice}
+              testID={`${testID ?? "row"}-price-edit`}
+            >
+              <Text style={styles.price}>{formatMoney(item.price, currency)}</Text>
+            </Pressable>
+          )}
         </Animated.View>
       </GestureDetector>
     </View>
@@ -161,17 +250,35 @@ const styles = StyleSheet.create({
     backgroundColor: theme.color.assignBg,
     borderColor: theme.color.assignBorder,
   },
+  namePress: { flexShrink: 1 },
   name: {
     fontSize: 15,
     fontWeight: "600",
     color: theme.color.text,
     flexShrink: 1,
   },
+  nameInput: {
+    flexShrink: 1,
+    flexGrow: 1,
+    fontSize: 15,
+    fontWeight: "600",
+    color: theme.color.text,
+    padding: 0,
+  },
   spacer: { flex: 1 },
   price: {
     fontSize: 15,
     fontWeight: "700",
     color: theme.color.text,
+    fontVariant: ["tabular-nums"],
+  },
+  priceInput: {
+    minWidth: 72,
+    fontSize: 15,
+    fontWeight: "700",
+    color: theme.color.text,
+    textAlign: "right",
+    padding: 0,
     fontVariant: ["tabular-nums"],
   },
 });

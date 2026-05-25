@@ -30,7 +30,7 @@ async function swipeRow(
   await page.mouse.up();
 }
 
-test("phase machine: start → load → bill → swipe → toggle → reset", async ({ page }, testInfo) => {
+test("phase machine: start → load → bill → edit → swipe → toggle → reset", async ({ page }, testInfo) => {
   const shot = async (name: string) => {
     const file = testInfo.outputPath(`${name}.png`);
     await page.screenshot({ path: file, fullPage: false });
@@ -54,18 +54,32 @@ test("phase machine: start → load → bill → swipe → toggle → reset", as
   await expect(page.getByTestId("totals-footer")).toBeVisible();
   await shot("03-bill-loaded");
 
-  // Swipe the first unassigned row left — null + left → "you" via nextAssignee.
   const firstUnassignedRow = page
     .getByTestId("section-unassigned")
     .locator('[data-testid^="row-"]')
     .first();
   const rowId = await firstUnassignedRow.getAttribute("data-testid");
+
+  // --- Inline edit (M6) --- tap the row's name → TextInput → rename → commit.
+  if (rowId) {
+    await page.getByTestId(`${rowId}-name-edit`).click();
+    const nameInput = page.getByTestId(`${rowId}-name-input`);
+    await expect(nameInput).toBeFocused();
+    await nameInput.fill("Renamed dish");
+    await nameInput.press("Enter"); // onSubmitEditing → commit
+    await expect(
+      page.getByTestId(rowId).getByText("Renamed dish"),
+    ).toBeVisible();
+    await shot("04-inline-edit");
+  }
+
+  // Swipe the first unassigned row left — null + left → "you" via nextAssignee.
   await swipeRow(page, firstUnassignedRow, "left");
   await expect(page.getByTestId("section-you")).toBeVisible();
   if (rowId) {
     await expect(page.getByTestId("section-you").locator(`[data-testid="${rowId}"]`)).toBeVisible();
   }
-  await shot("04-assigned-to-you");
+  await shot("05-assigned-to-you");
 
   // Swipe the same row right — "you" + right → "them".
   if (rowId) {
@@ -73,22 +87,32 @@ test("phase machine: start → load → bill → swipe → toggle → reset", as
     await swipeRow(page, youRow, "right");
     await expect(page.getByTestId("section-them").locator(`[data-testid="${rowId}"]`)).toBeVisible();
   }
-  await shot("05-assigned-to-them");
+  await shot("06-assigned-to-them");
 
   // Toggle the Tax inclusive switch — Them's total should drop because
-  // Margherita pizza is assigned to Them and its tax share goes away.
+  // the assigned row's tax share goes away.
   const themBefore = await page.getByTestId("totals-them").textContent();
   const taxSwitch = page.getByTestId("toggle-tax").locator('input[type="checkbox"]');
   await taxSwitch.check({ force: true });
   await page.waitForTimeout(200);
   const themAfter = await page.getByTestId("totals-them").textContent();
   expect(themAfter).not.toBe(themBefore);
-  await shot("06-tax-inclusive-on");
+  await shot("07-tax-inclusive-on");
 
-  // "↻ New bill" returns to the Start screen.
+  // Clean the bill before reset: swipe the them-row right ("them" + right →
+  // null) so every item is unassigned again. handleReset then resets directly
+  // without the confirm Alert — which RN-Web stubs to a no-op, so the
+  // dirty-bill confirm path is covered by jest (BillReview.test.tsx), not here.
+  if (rowId) {
+    const themRow = page.getByTestId("section-them").locator(`[data-testid="${rowId}"]`);
+    await swipeRow(page, themRow, "right");
+    await expect(page.getByTestId("section-them")).toHaveCount(0);
+  }
+
+  // "↻ New bill" on a now-clean bill returns to the Start screen immediately.
   await page.getByTestId("bill-reset").click();
   await expect(page.getByTestId("start-take-photo")).toBeVisible();
-  await shot("07-back-to-start");
+  await shot("08-back-to-start");
 });
 
 // M5-specific: the swipe underlay reveal + the 70 px commit threshold. The
